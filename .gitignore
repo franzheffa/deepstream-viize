@@ -1,0 +1,10 @@
+*.o
+*.so
+deepstream-test5-analytics
+config/peoplenet/*.etlt
+config/peoplenet/*.txt
+config/peoplenet/*.engine
+*.mp4
+*.mkv
+.DS_Store
+*.swp
