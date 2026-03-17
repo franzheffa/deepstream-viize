@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: deepstream-config
+  namespace: viize
+data:
+  KAFKA_BROKER: "kafka-service:9092"
+  KAFKA_TOPIC: "quickstart-events"
+  PLATFORM: "x86"

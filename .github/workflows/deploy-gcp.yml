@@ -1,0 +1,57 @@
+name: Deploy to GCP / GKE
+
+on:
+  push:
+    branches: [main]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GKE_CLUSTER: viize-cluster
+  GKE_ZONE: us-central1-a
+  IMAGE_DS: gcr.io/${{ secrets.GCP_PROJECT_ID }}/deepstream-viize
+  IMAGE_DASH: gcr.io/${{ secrets.GCP_PROJECT_ID }}/viize-dashboard
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Build & push DeepStream image
+        run: |
+          docker build -t $IMAGE_DS:$GITHUB_SHA -t $IMAGE_DS:latest .
+          docker push $IMAGE_DS:$GITHUB_SHA
+          docker push $IMAGE_DS:latest
+
+      - name: Build & push Dashboard image
+        run: |
+          docker build -t $IMAGE_DASH:$GITHUB_SHA -t $IMAGE_DASH:latest ./dashboard
+          docker push $IMAGE_DASH:$GITHUB_SHA
+          docker push $IMAGE_DASH:latest
+
+      - name: Get GKE credentials
+        run: gcloud container clusters get-credentials $GKE_CLUSTER --zone $GKE_ZONE
+
+      - name: Patch image tags in k8s manifests
+        run: |
+          sed -i "s|gcr.io/PROJECT_ID/deepstream-viize:latest|$IMAGE_DS:$GITHUB_SHA|g" k8s/deployment.yaml
+          sed -i "s|gcr.io/PROJECT_ID/viize-dashboard:latest|$IMAGE_DASH:$GITHUB_SHA|g" k8s/deployment.yaml
+
+      - name: Deploy to GKE
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/configmap.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl rollout status deployment/deepstream-analytics -n viize
+          kubectl rollout status deployment/viize-dashboard -n viize

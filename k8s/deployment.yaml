@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deepstream-analytics
+  namespace: viize
+  labels:
+    app: deepstream-analytics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: deepstream-analytics
+  template:
+    metadata:
+      labels:
+        app: deepstream-analytics
+    spec:
+      containers:
+        - name: deepstream
+          image: gcr.io/PROJECT_ID/deepstream-viize:latest
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+              memory: "4Gi"
+              cpu: "2"
+            requests:
+              memory: "2Gi"
+              cpu: "1"
+          envFrom:
+            - configMapRef:
+                name: deepstream-config
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config
+      volumes:
+        - name: config-volume
+          configMap:
+            name: deepstream-config
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: viize-dashboard
+  namespace: viize
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: viize-dashboard
+  template:
+    metadata:
+      labels:
+        app: viize-dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: gcr.io/PROJECT_ID/viize-dashboard:latest
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: deepstream-config
