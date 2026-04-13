@@ -1,0 +1,144 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── VIIZE DeepStream ─────────────────────────────────────────────────────────
+
+model ViizeStore {
+  id        String   @id @default(cuid())
+  storeId   String   @unique
+  name      String
+  address   String?
+  city      String?
+  timezone  String   @default("America/Toronto")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cameras     ViizeCamera[]
+  stockAlerts ViizeStockAlert[]
+  events      ViizeEvent[]
+  skus        ViizeSku[]
+}
+
+model ViizeCamera {
+  id         String      @id @default(cuid())
+  cameraId   String      @unique
+  name       String
+  zone       String
+  location   String?
+  type       String
+  rtspUrl    String?
+  status     String      @default("pending")
+  storeId    String
+  store      ViizeStore  @relation(fields: [storeId], references: [storeId])
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  detections ViizeDetection[]
+
+  @@index([storeId])
+}
+
+model ViizeSku {
+  id          String     @id @default(cuid())
+  skuCode     String
+  name        String
+  zone        String
+  shelf       String?
+  threshold   Int        @default(8)
+  storeId     String
+  store       ViizeStore @relation(fields: [storeId], references: [storeId])
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  stockAlerts ViizeStockAlert[]
+
+  @@unique([skuCode, storeId])
+  @@index([storeId])
+}
+
+model ViizeDetection {
+  id         String      @id @default(cuid())
+  cameraId   String
+  camera     ViizeCamera @relation(fields: [cameraId], references: [cameraId])
+  classId    Int
+  label      String
+  confidence Float
+  bboxX      Float?
+  bboxY      Float?
+  bboxW      Float?
+  bboxH      Float?
+  trackId    String?
+  frameNum   Int?
+  detectedAt DateTime    @default(now())
+
+  @@index([cameraId])
+  @@index([detectedAt])
+}
+
+model ViizeStockAlert {
+  id           String     @id @default(cuid())
+  alertType    String
+  skuCode      String
+  skuName      String
+  zone         String
+  currentCount Int
+  threshold    Int
+  confidence   Float
+  cameraId     String?
+  storeId      String
+  store        ViizeStore @relation(fields: [storeId], references: [storeId])
+  sku          ViizeSku?  @relation(fields: [skuCode, storeId], references: [skuCode, storeId])
+  resolvedAt   DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([storeId])
+  @@index([alertType])
+  @@index([createdAt])
+}
+
+model ViizeEvent {
+  id          String     @id @default(cuid())
+  eventType   String
+  streamId    String
+  storeId     String
+  store       ViizeStore @relation(fields: [storeId], references: [storeId])
+  payload     Json
+  source      String
+  processedAt DateTime   @default(now())
+
+  @@index([storeId])
+  @@index([eventType])
+  @@index([processedAt])
+}
+
+model ViizeOccupancy {
+  id        String   @id @default(cuid())
+  storeId   String
+  hour      Int
+  dayOfWeek Int
+  count     Int
+  date      DateTime
+  createdAt DateTime @default(now())
+
+  @@index([storeId])
+  @@index([date])
+}
+
+model ViizeGeminiLog {
+  id        String   @id @default(cuid())
+  storeId   String
+  prompt    String
+  response  String   @db.Text
+  context   String?
+  tokensUsed Int?
+  latencyMs  Int?
+  createdAt DateTime @default(now())
+
+  @@index([storeId])
+  @@index([createdAt])
+}
