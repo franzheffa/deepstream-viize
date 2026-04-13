@@ -96,12 +96,7 @@ export default function Dashboard() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-          <span style={{ background: '#76B900', color: '#000', fontSize: '0.55rem', fontWeight: 900, padding: '0.3rem 0.65rem', borderRadius: 3, letterSpacing: '0.08em' }}>
-            NVIDIA AI
-          </span>
-          <span style={{ background: '#4285F4', color: '#fff', fontSize: '0.55rem', fontWeight: 700, padding: '0.3rem 0.65rem', borderRadius: 3, letterSpacing: '0.08em' }}>
-            GCP ISV
-          </span>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
             <div style={{
               width: 8, height: 8, borderRadius: '50%',
@@ -196,9 +191,7 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-          <span style={{ fontSize: '0.58rem', color: '#ccc', letterSpacing: '0.05em' }}>
-            GCP Marketplace · NVIDIA AI Enterprise · ISV Partner
-          </span>
+
         </footer>
 
       </div>
