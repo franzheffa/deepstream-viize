@@ -1,0 +1,39 @@
+{
+  "sources": [
+    {
+      "name": "RTSP Bridge Entree",
+      "type": "rtsp-ingest",
+      "input": "rtsp://192.168.1.100:554/stream",
+      "playback": "hls-or-webrtc",
+      "location": "entree-epicerie-saint-denis",
+      "zone": "CAM-01",
+      "status": "active"
+    },
+    {
+      "name": "RTSP Bridge Rayon B3",
+      "type": "rtsp-ingest",
+      "input": "rtsp://192.168.1.101:554/stream",
+      "playback": "hls-or-webrtc",
+      "location": "rayon-b3-eau",
+      "zone": "CAM-02",
+      "status": "active"
+    },
+    {
+      "name": "RTSP Bridge Caisse",
+      "type": "rtsp-ingest",
+      "input": "rtsp://192.168.1.102:554/stream",
+      "playback": "hls-or-webrtc",
+      "location": "caisse-principale",
+      "zone": "CAM-03",
+      "status": "active"
+    },
+    {
+      "name": "Mobile Camera Publisher",
+      "type": "webrtc-publisher",
+      "input": "browser-camera",
+      "playback": "webrtc",
+      "zone": "CAM-MOBILE",
+      "status": "ready"
+    }
+  ]
+}

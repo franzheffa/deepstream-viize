@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  deepstream:
+    env_file:
+      - .env
+    environment:
+      RTSP_CAM_01: ${RTSP_CAM_01}
+      RTSP_CAM_02: ${RTSP_CAM_02}
+      RTSP_IPHONE: ${RTSP_IPHONE}
+      VERCEL_WEBHOOK_URL: ${VERCEL_WEBHOOK_URL}
+      DEEPSTREAM_WEBHOOK_SECRET: ${DEEPSTREAM_WEBHOOK_SECRET}
+      CONFIDENCE_MIN: ${CONFIDENCE_MIN}
+      WEBHOOK_INTERVAL_SEC: ${WEBHOOK_INTERVAL_SEC}
+      KAFKA_BROKER: ${KAFKA_BROKER}
+      KAFKA_TOPIC: ${KAFKA_TOPIC}
+  dashboard:
+    env_file:
+      - .env
+    environment:
+      KAFKA_BROKER: ${KAFKA_BROKER}
+      KAFKA_TOPIC: ${KAFKA_TOPIC}
