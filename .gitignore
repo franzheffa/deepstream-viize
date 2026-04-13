@@ -8,3 +8,7 @@ config/peoplenet/*.engine
 *.mkv
 .DS_Store
 *.swp
+.vercel
+dashboard/.next/
+.env
+dashboard/.env.local
