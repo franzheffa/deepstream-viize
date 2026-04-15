@@ -32,6 +32,7 @@ type Membership = {
 type AuthPayload = {
   authenticated: boolean
   bootstrapAllowed: boolean
+  databaseReady?: boolean
   user?: {
     id: string
     email: string
@@ -238,6 +239,48 @@ function AuthCard({
   )
 }
 
+function PasswordField({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string
+  placeholder: string
+  onChange: (value: string) => void
+}) {
+  const [visible, setVisible] = useState(false)
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        type={visible ? 'text' : 'password'}
+        style={{ ...inputStyle, paddingRight: '3rem' }}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((current) => !current)}
+        style={{
+          position: 'absolute',
+          top: '50%',
+          right: 10,
+          transform: 'translateY(-50%)',
+          background: 'transparent',
+          border: 'none',
+          color: '#666',
+          fontSize: '0.82rem',
+          cursor: 'pointer',
+        }}
+        aria-label={visible ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+      >
+        {visible ? '🙈' : '👁️'}
+      </button>
+    </div>
+  )
+}
+
 function AuthScreen({
   bootstrapAllowed,
   actionLoading,
@@ -273,24 +316,34 @@ function AuthScreen({
             Une surface enterprise pour deployer la surveillance, les ruptures, le parking, la reception marchandise,
             les scans barcode/LiDAR et le bridge RTSP vers WebRTC/HLS par magasin avec multi-tenancy, roles et audit.
           </p>
+
+          <div style={{ marginTop: '1.2rem', display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.9rem' }}>
+            {[
+              { src: '/partners/nvidia-inception-badge-black.svg', label: 'NVIDIA Inception Program' },
+              { src: '/partners/gemini-enterprise.png', label: 'Gemini Enterprise' },
+              { src: '/partners/google-maps-platform.png', label: 'Google Maps Platform' },
+            ].map((item) => (
+              <div key={item.label} style={{ background: 'rgba(255,255,255,.04)', border: '1px solid rgba(201,162,39,.12)', borderRadius: 2, padding: '0.9rem', display: 'grid', placeItems: 'center', minHeight: 96 }}>
+                <img src={item.src} alt={item.label} style={{ maxWidth: '100%', maxHeight: 42, objectFit: 'contain', filter: item.label === 'NVIDIA Inception Program' ? 'none' : 'none' }} />
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: bootstrapAllowed ? '1fr 1fr' : '1fr', gap: '1rem' }}>
-          {bootstrapAllowed ? (
-            <AuthCard
-              title="Bootstrap owner"
-              subtitle="Premier demarrage production: creation du compte owner, du premier magasin et du seed supermarket."
-            >
-              <div style={{ display: 'grid', gap: 10 }}>
-                <input value={bootstrapForm.displayName} onChange={(event) => setBootstrapForm((current) => ({ ...current, displayName: event.target.value }))} placeholder="Nom complet" style={inputStyle} />
-                <input value={bootstrapForm.email} onChange={(event) => setBootstrapForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email" style={inputStyle} />
-                <input value={bootstrapForm.password} onChange={(event) => setBootstrapForm((current) => ({ ...current, password: event.target.value }))} placeholder="Mot de passe fort" type="password" style={inputStyle} />
-                <button type="button" onClick={onBootstrap} disabled={actionLoading} style={primaryButton}>
-                  Lancer le bootstrap owner
-                </button>
-              </div>
-            </AuthCard>
-          ) : null}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <AuthCard
+            title="Creation owner"
+            subtitle="Premier demarrage ou reprise du site: cree le compte owner. Si un compte existe deja, le bootstrap sera bloque proprement."
+          >
+            <div style={{ display: 'grid', gap: 10 }}>
+              <input value={bootstrapForm.displayName} onChange={(event) => setBootstrapForm((current) => ({ ...current, displayName: event.target.value }))} placeholder="Nom complet" style={inputStyle} />
+              <input value={bootstrapForm.email} onChange={(event) => setBootstrapForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email" style={inputStyle} />
+              <PasswordField value={bootstrapForm.password} onChange={(value) => setBootstrapForm((current) => ({ ...current, password: value }))} placeholder="Mot de passe fort" />
+              <button type="button" onClick={onBootstrap} disabled={actionLoading} style={primaryButton}>
+                Creer le compte owner
+              </button>
+            </div>
+          </AuthCard>
 
           <AuthCard
             title="Connexion enterprise"
@@ -298,7 +351,7 @@ function AuthScreen({
           >
             <div style={{ display: 'grid', gap: 10 }}>
               <input value={loginForm.email} onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email" style={inputStyle} />
-              <input value={loginForm.password} onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))} placeholder="Mot de passe" type="password" style={inputStyle} />
+              <PasswordField value={loginForm.password} onChange={(value) => setLoginForm((current) => ({ ...current, password: value }))} placeholder="Mot de passe" />
               <button type="button" onClick={onLogin} disabled={actionLoading} style={primaryButton}>
                 Se connecter
               </button>
@@ -309,6 +362,12 @@ function AuthScreen({
         {authError ? (
           <div style={{ marginTop: '1rem', border: '1px solid #F1C4C4', background: '#FFF4F4', color: '#9F2D2D', padding: '0.9rem 1rem', borderRadius: 2 }}>
             {authError}
+          </div>
+        ) : null}
+
+        {!bootstrapAllowed ? (
+          <div style={{ marginTop: '1rem', border: `1px solid ${BORDER}`, background: PANEL, color: '#666', padding: '0.9rem 1rem', borderRadius: 2, fontSize: '0.7rem' }}>
+            Le bootstrap owner semble deja verrouille. Si le login echoue encore, on est probablement face a un probleme d env base de donnees ou de schema, pas de formulaire.
           </div>
         ) : null}
       </div>

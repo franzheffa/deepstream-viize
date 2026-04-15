@@ -65,6 +65,17 @@ export default function EnterpriseFooter() {
           paddingTop: '0.85rem',
         }}
       >
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {[
+            { src: '/partners/nvidia-inception-badge-black.svg', alt: 'NVIDIA Inception Program', width: 122 },
+            { src: '/partners/gemini-enterprise.png', alt: 'Gemini Enterprise', width: 180 },
+            { src: '/partners/google-maps-platform.png', alt: 'Google Maps Platform', width: 150 },
+          ].map((item) => (
+            <div key={item.alt} style={{ background: '#fff', borderRadius: 2, padding: '0.4rem 0.6rem', border: '1px solid rgba(201,162,39,.12)' }}>
+              <img src={item.src} alt={item.alt} style={{ width: item.width, height: 'auto', display: 'block' }} />
+            </div>
+          ))}
+        </div>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
           {[
             ['GPU', 'NVIDIA DeepStream + TensorRT'],

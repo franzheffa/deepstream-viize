@@ -1,4 +1,5 @@
 import { prisma } from './prisma'
+import { readEnv } from './env'
 import { hashPassword } from './security'
 
 type BootstrapInput = {
@@ -86,7 +87,7 @@ export async function bootstrapOwnerAndStore(input: BootstrapInput) {
   const store = await prisma.store.create({
     data: {
       slug: 'epicerie-saint-denis-mtl',
-      name: process.env.NEXT_PUBLIC_STORE_NAME?.trim() || 'Epicerie Saint-Denis',
+      name: readEnv('NEXT_PUBLIC_STORE_NAME') || 'Epicerie Saint-Denis',
       type: 'supermarket',
       country: 'CA',
       city: 'Montreal',

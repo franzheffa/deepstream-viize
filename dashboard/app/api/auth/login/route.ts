@@ -74,7 +74,8 @@ export async function POST(request: Request) {
     })
 
     return response
-  } catch {
+  } catch (error) {
+    console.error('[auth/login] failed', error)
     return NextResponse.json({ error: 'Impossible de se connecter.' }, { status: 500 })
   }
 }

@@ -36,6 +36,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Le bootstrap est verrouille car un compte existe deja.' }, { status: 409 })
     }
 
+    console.error('[auth/bootstrap] failed', error)
     return NextResponse.json({ error: 'Impossible de lancer le bootstrap owner.' }, { status: 500 })
   }
 }

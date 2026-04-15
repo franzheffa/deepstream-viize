@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
+import { readEnv } from './env'
 
-const SESSION_SECRET = (process.env.VIIZE_SESSION_SECRET || process.env.DEEPSTREAM_WEBHOOK_SECRET || 'viize-session-secret-change-me').trim()
+const SESSION_SECRET = readEnv('VIIZE_SESSION_SECRET', 'DEEPSTREAM_WEBHOOK_SECRET') || 'viize-session-secret-change-me'
 
 function b64url(input: Buffer | string) {
   const value = Buffer.isBuffer(input) ? input : Buffer.from(input)

@@ -1,4 +1,11 @@
 import { PrismaClient } from '@prisma/client'
+import { readDirectDatabaseUrl } from './env'
+
+const resolvedDatabaseUrl = readDirectDatabaseUrl()
+
+if (resolvedDatabaseUrl) {
+  process.env.DATABASE_URL = resolvedDatabaseUrl
+}
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
 
