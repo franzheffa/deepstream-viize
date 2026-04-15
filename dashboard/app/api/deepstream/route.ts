@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 export const dynamic = 'force-dynamic'
 const SECRET = process.env.DEEPSTREAM_WEBHOOK_SECRET ?? "";
+const STORE_ID = (process.env.NEXT_PUBLIC_STORE_ID ?? "epicerie-saint-denis-mtl").trim();
 const THRESHOLDS: Record<string,number> = {
   bouteille_eau_500ml: 8,
   pain_baguette: 5,
@@ -23,14 +24,14 @@ export async function POST(req: NextRequest) {
       }));
     console.log(JSON.stringify({ ts: body.timestamp, streamId: body.streamId, dets: dets.length, alerts: alerts.length }));
     return NextResponse.json({ ok:true, received:dets.length, alerts:alerts.length, alertList:alerts,
-      storeId: process.env.NEXT_PUBLIC_STORE_ID ?? "epicerie-saint-denis-mtl" });
+      storeId: STORE_ID });
   } catch(e:any) {
     return NextResponse.json({ ok:false, error:e.message }, { status:400 });
   }
 }
 export async function GET() {
   return NextResponse.json({ ok:true, service:"VIIZE DeepStream Webhook", version:"1.1.0",
-    store: process.env.NEXT_PUBLIC_STORE_ID ?? "epicerie-saint-denis-mtl",
+    store: STORE_ID,
     posture: "enterprise retail telemetry",
     privacy: "least-data camera analytics",
     uptime: process.uptime() });

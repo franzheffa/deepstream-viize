@@ -31,7 +31,7 @@ export type HealthPayload = {
 }
 
 const sourcesFilePath = path.join(process.cwd(), '..', 'config', 'sources.json')
-const storeId = process.env.NEXT_PUBLIC_STORE_ID ?? 'epicerie-saint-denis-mtl'
+const storeId = (process.env.NEXT_PUBLIC_STORE_ID ?? 'epicerie-saint-denis-mtl').trim()
 
 const DEFAULT_SOURCES: SourcePayload[] = [
   {
