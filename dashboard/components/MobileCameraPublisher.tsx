@@ -103,6 +103,8 @@ export default function MobileCameraPublisher() {
               status: running ? 'live' : 'ready',
               zone: 'reserve',
               purpose: 'scan produit + reception + inventaire',
+              edgeRegion: 'northamerica-northeast1',
+              autoProvisionBridge: true,
               capabilities: {
                 iphone: true,
                 lidarReady: deviceInfo.lidarReady,
@@ -119,6 +121,8 @@ export default function MobileCameraPublisher() {
               status: 'planned',
               zone: 'parking',
               purpose: 'occupation + livraison + quai + flotte',
+              edgeRegion: 'northamerica-northeast1',
+              autoProvisionBridge: true,
               capabilities: {
                 parking: true,
               },

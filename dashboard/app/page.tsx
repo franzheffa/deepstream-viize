@@ -48,6 +48,7 @@ type SourceRecord = {
   name: string
   type: string
   input: string
+  ingestUrl?: string | null
   playback: string | null
   status: string
   zone?: string | null
@@ -209,6 +210,52 @@ function InfoTile({ label, value, sub, color }: { label: string; value: string |
       <div style={{ fontSize: '2rem', fontWeight: 900, color: BLACK, lineHeight: 1 }}>{value}</div>
       <div style={{ fontSize: '0.62rem', color: '#A3A3A3', marginTop: 4 }}>{sub}</div>
     </div>
+  )
+}
+
+function PanelCard({ children, dark = false }: { children: ReactNode; dark?: boolean }) {
+  return (
+    <section
+      style={{
+        background: dark ? BLACK : '#fff',
+        color: dark ? '#fff' : BLACK,
+        border: `1px solid ${dark ? 'rgba(201,162,39,.18)' : BORDER}`,
+        borderRadius: 2,
+        padding: '1.25rem',
+      }}
+    >
+      {children}
+    </section>
+  )
+}
+
+function BadgePill({ children, tone = 'default' }: { children: ReactNode; tone?: 'default' | 'gold' | 'ok' }) {
+  const palette =
+    tone === 'gold'
+      ? { bg: 'rgba(201,162,39,.1)', color: GOLD, border: 'rgba(201,162,39,.18)' }
+      : tone === 'ok'
+        ? { bg: 'rgba(29,106,69,.08)', color: '#1D6A45', border: 'rgba(29,106,69,.16)' }
+        : { bg: '#fff', color: '#666', border: BORDER }
+
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '0.36rem 0.65rem',
+        borderRadius: 999,
+        background: palette.bg,
+        border: `1px solid ${palette.border}`,
+        color: palette.color,
+        fontSize: '0.58rem',
+        fontWeight: 800,
+        letterSpacing: '.08em',
+        textTransform: 'uppercase',
+      }}
+    >
+      {children}
+    </span>
   )
 }
 
@@ -431,9 +478,53 @@ export default function DashboardPage() {
   const [loginForm, setLoginForm] = useState({ email: '', password: '' })
   const [bootstrapForm, setBootstrapForm] = useState({ displayName: '', email: '', password: '' })
   const [scanForm, setScanForm] = useState({ barcode: '', quantity: '0', sourceType: 'iphone-lidar', zone: 'reserve', mode: 'set' })
-  const [storeForm, setStoreForm] = useState({ slug: '', name: '', city: 'Montreal', country: 'CA' })
+  const [storeForm, setStoreForm] = useState({
+    slug: '',
+    name: '',
+    city: 'Montreal',
+    country: 'CA',
+    address: '',
+    brandName: '',
+    timezone: 'America/Toronto',
+    type: 'supermarket',
+    cameraPlan: 'starter',
+    parkingEnabled: true,
+    lidarEnabled: true,
+    voiceAssistantEnabled: true,
+  })
   const [bridgeForm, setBridgeForm] = useState({ profileKey: '', name: '', sourceKey: '', rtspUrl: '', webrtcUrl: '', hlsUrl: '', edgeRegion: 'northamerica-northeast1', status: 'planned' })
+  const [sourceWizardForm, setSourceWizardForm] = useState({
+    sourceKey: '',
+    name: '',
+    type: 'rtsp-camera',
+    input: 'rtsp',
+    ingestUrl: '',
+    playbackUrl: '',
+    zone: 'surface de vente',
+    purpose: 'surveillance + comptage + stock',
+    edgeRegion: 'northamerica-northeast1',
+    autoProvisionBridge: true,
+  })
+  const [catalogCsv, setCatalogCsv] = useState(
+    'sku,barcode,name,category,unit,aisle,shelf,threshold,stockOnHand\nEAU-1500,377001000011,Eau minerale 1.5L,Boissons,unit,B1,etagere 1,12,30\nPATES-500,377001000012,Pates fusilli 500g,Epicerie,unit,C4,etagere 3,18,42',
+  )
+  const [productForm, setProductForm] = useState({
+    sku: '',
+    barcode: '',
+    name: '',
+    category: 'Epicerie',
+    unit: 'unit',
+    aisle: '',
+    shelf: '',
+    threshold: '10',
+    stockOnHand: '0',
+  })
   const endRef = useRef<HTMLDivElement>(null)
+
+  const currentMembership = auth?.memberships?.find((item) => item.storeId === auth?.currentStoreId) || null
+  const onboardingPayload = auth?.authenticated
+    ? `viize://onboard?store=${dashboard?.store.slug || currentMembership?.storeSlug || 'store'}&source=${sourceWizardForm.sourceKey || 'camera-01'}&mode=${sourceWizardForm.type}&region=${sourceWizardForm.edgeRegion}`
+    : ''
 
   async function fetchJson<T>(url: string, init?: RequestInit) {
     const response = await fetch(url, {
@@ -605,7 +696,20 @@ export default function DashboardPage() {
       if (me.memberships?.length) {
         await handleStoreSwitch(me.memberships[me.memberships.length - 1].storeId)
       }
-      setStoreForm({ slug: '', name: '', city: 'Montreal', country: 'CA' })
+      setStoreForm({
+        slug: '',
+        name: '',
+        city: 'Montreal',
+        country: 'CA',
+        address: '',
+        brandName: '',
+        timezone: 'America/Toronto',
+        type: 'supermarket',
+        cameraPlan: 'starter',
+        parkingEnabled: true,
+        lidarEnabled: true,
+        voiceAssistantEnabled: true,
+      })
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Creation magasin impossible.')
     }
@@ -622,6 +726,74 @@ export default function DashboardPage() {
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Bridge impossible.')
     }
+  }
+
+  async function submitSourceWizard() {
+    try {
+      const sourceKey = sourceWizardForm.sourceKey || `camera-${dashboard?.sources.length ? dashboard.sources.length + 1 : 1}`
+      await fetchJson('/api/sources', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...sourceWizardForm,
+          sourceKey,
+          id: sourceKey,
+        }),
+      })
+      await refreshDashboard()
+      setSourceWizardForm((current) => ({
+        ...current,
+        sourceKey: '',
+        name: '',
+        ingestUrl: '',
+        playbackUrl: '',
+      }))
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Onboarding camera impossible.')
+    }
+  }
+
+  async function submitCatalogImport() {
+    try {
+      await fetchJson('/api/products/import', {
+        method: 'POST',
+        body: JSON.stringify({ csvText: catalogCsv }),
+      })
+      await refreshDashboard()
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Import catalogue impossible.')
+    }
+  }
+
+  async function submitProduct() {
+    try {
+      await fetchJson('/api/products', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...productForm,
+          threshold: Number(productForm.threshold),
+          stockOnHand: Number(productForm.stockOnHand),
+        }),
+      })
+      await refreshDashboard()
+      setProductForm({
+        sku: '',
+        barcode: '',
+        name: '',
+        category: 'Epicerie',
+        unit: 'unit',
+        aisle: '',
+        shelf: '',
+        threshold: '10',
+        stockOnHand: '0',
+      })
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Creation produit impossible.')
+    }
+  }
+
+  async function importCatalogFile(file: File) {
+    const text = await file.text()
+    setCatalogCsv(text)
   }
 
   if (authLoading) {
@@ -653,7 +825,6 @@ export default function DashboardPage() {
     { key: 'reports', label: 'Rapports' },
   ]
 
-  const currentMembership = auth.memberships?.find((item) => item.storeId === auth.currentStoreId) || null
   const occupancySeries = events.length ? events : [{ ts: new Date().toISOString(), occupancy: 0, entry: 0, exit: 0 }]
 
   return (
@@ -786,6 +957,57 @@ export default function DashboardPage() {
 
         {tab === 'cameras' && (
           <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.85fr', gap: '1rem', marginBottom: '1rem' }}>
+              <PanelCard dark>
+                <SectionTitle>Wizard camera QR / RTSP</SectionTitle>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '0.75rem' }}>
+                  <input value={sourceWizardForm.name} onChange={(event) => setSourceWizardForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom camera ou iPhone" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={sourceWizardForm.sourceKey} onChange={(event) => setSourceWizardForm((current) => ({ ...current, sourceKey: event.target.value }))} placeholder="sourceKey" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <select value={sourceWizardForm.type} onChange={(event) => setSourceWizardForm((current) => ({ ...current, type: event.target.value, input: event.target.value === 'iphone-lidar' ? 'browser-camera' : 'rtsp' }))} style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }}>
+                    <option value="rtsp-camera">📹 Camera RTSP rayon</option>
+                    <option value="occupancy-camera">👥 Camera comptage</option>
+                    <option value="parking-camera">🅿️ Camera parking</option>
+                    <option value="iphone-lidar">📱 iPhone LiDAR</option>
+                  </select>
+                  <input value={sourceWizardForm.zone} onChange={(event) => setSourceWizardForm((current) => ({ ...current, zone: event.target.value }))} placeholder="Zone" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={sourceWizardForm.ingestUrl} onChange={(event) => setSourceWizardForm((current) => ({ ...current, ingestUrl: event.target.value }))} placeholder="rtsp://camera-ip/stream" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={sourceWizardForm.purpose} onChange={(event) => setSourceWizardForm((current) => ({ ...current, purpose: event.target.value }))} placeholder="Usage business" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={sourceWizardForm.edgeRegion} onChange={(event) => setSourceWizardForm((current) => ({ ...current, edgeRegion: event.target.value }))} placeholder="Region edge" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                </div>
+                <div style={{ marginTop: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,.72)', fontSize: '0.7rem' }}>
+                    <input type="checkbox" checked={sourceWizardForm.autoProvisionBridge} onChange={(event) => setSourceWizardForm((current) => ({ ...current, autoProvisionBridge: event.target.checked }))} />
+                    Provisionner automatiquement le bridge WebRTC/HLS
+                  </label>
+                  <button type="button" onClick={submitSourceWizard} style={primaryButton}>Enregistrer la source</button>
+                </div>
+              </PanelCard>
+
+              <PanelCard>
+                <SectionTitle>Paquet onboarding terrain</SectionTitle>
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <BadgePill tone="gold">Plug-and-play camera onboarding</BadgePill>
+                  <div style={{ background: PANEL, border: `1px solid ${BORDER}`, padding: '0.9rem', borderRadius: 2, fontSize: '0.68rem', lineHeight: 1.7 }}>
+                    1. Scanner le QR ou ouvrir l iPhone
+                    <br />
+                    2. Coller l URL RTSP si la camera est fixe
+                    <br />
+                    3. VIIZE enregistre la source et prepare le bridge edge
+                    <br />
+                    4. Le magasin passe en lecture navigateur sans RTSP direct
+                  </div>
+                  <div style={{ background: BLACK, color: GOLD, padding: '0.9rem', borderRadius: 2, fontSize: '0.62rem', lineHeight: 1.7, wordBreak: 'break-all' }}>
+                    {onboardingPayload}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <BadgePill tone="ok">📡 Bridge auto</BadgePill>
+                    <BadgePill>🔐 Session signee</BadgePill>
+                    <BadgePill>🏬 {dashboard.store.slug}</BadgePill>
+                  </div>
+                </div>
+              </PanelCard>
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '1rem', marginBottom: '1rem' }}>
               {dashboard.sources.map((source) => (
                 <div key={source.id} style={{ background: BLACK, border: `1px solid ${statusTone(source.status)}`, borderRadius: 2, overflow: 'hidden' }}>
@@ -796,6 +1018,7 @@ export default function DashboardPage() {
                     <div>
                       <div style={{ color: '#fff', fontSize: '0.74rem', fontWeight: 800 }}>{source.name}</div>
                       <div style={{ color: '#666', fontSize: '0.56rem', marginTop: 4 }}>{source.id} · {source.zone || 'zone non definie'}</div>
+                      <div style={{ color: '#666', fontSize: '0.56rem', marginTop: 4 }}>{source.type} · {source.input}</div>
                     </div>
                     <div style={{ color: statusTone(source.status), fontSize: '0.55rem', fontWeight: 800, letterSpacing: '.1em' }}>{source.status.toUpperCase()}</div>
                   </div>
@@ -835,6 +1058,48 @@ export default function DashboardPage() {
 
         {tab === 'stock' && (
           <>
+            <div style={{ display: 'grid', gridTemplateColumns: '0.95fr 1.05fr', gap: '1rem', marginBottom: '1rem' }}>
+              <PanelCard>
+                <SectionTitle>Import catalogue CSV / barcode</SectionTitle>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <textarea value={catalogCsv} onChange={(event) => setCatalogCsv(event.target.value)} style={{ ...inputStyle, minHeight: 220, resize: 'vertical', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }} />
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <label style={{ ...secondaryButton, display: 'inline-flex', alignItems: 'center' }}>
+                      Importer un CSV
+                      <input type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={(event) => { const file = event.target.files?.[0]; if (file) importCatalogFile(file).catch(() => undefined) }} />
+                    </label>
+                    <button type="button" onClick={submitCatalogImport} style={primaryButton}>Synchroniser le catalogue</button>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <BadgePill>📦 SKU</BadgePill>
+                    <BadgePill>🏷️ Barcode</BadgePill>
+                    <BadgePill>📍 Aisle / shelf</BadgePill>
+                    <BadgePill tone="ok">📱 iPhone ready</BadgePill>
+                  </div>
+                </div>
+              </PanelCard>
+
+              <PanelCard dark>
+                <SectionTitle>Creation rapide produit</SectionTitle>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '0.75rem' }}>
+                  <input value={productForm.sku} onChange={(event) => setProductForm((current) => ({ ...current, sku: event.target.value }))} placeholder="SKU" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={productForm.barcode} onChange={(event) => setProductForm((current) => ({ ...current, barcode: event.target.value }))} placeholder="Barcode" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={productForm.name} onChange={(event) => setProductForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom produit" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))} placeholder="Categorie" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={productForm.aisle} onChange={(event) => setProductForm((current) => ({ ...current, aisle: event.target.value }))} placeholder="Aisle / rayon" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={productForm.shelf} onChange={(event) => setProductForm((current) => ({ ...current, shelf: event.target.value }))} placeholder="Shelf / emplacement" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={productForm.threshold} onChange={(event) => setProductForm((current) => ({ ...current, threshold: event.target.value }))} placeholder="Seuil" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={productForm.stockOnHand} onChange={(event) => setProductForm((current) => ({ ...current, stockOnHand: event.target.value }))} placeholder="Stock initial" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                </div>
+                <div style={{ marginTop: '0.9rem', display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <div style={{ color: 'rgba(255,255,255,.68)', fontSize: '0.68rem', lineHeight: 1.7 }}>
+                    Cree rapidement un produit puis enchaine avec un scan barcode ou iPhone LiDAR pour la verification terrain.
+                  </div>
+                  <button type="button" onClick={submitProduct} style={primaryButton}>Creer le produit</button>
+                </div>
+              </PanelCard>
+            </div>
+
             <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem', marginBottom: '1rem' }}>
               <SectionTitle>Stocks reels et base produit</SectionTitle>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
@@ -903,38 +1168,68 @@ export default function DashboardPage() {
         {tab === 'operations' && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-              <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
+              <PanelCard>
                 <SectionTitle>Ajouter un magasin</SectionTitle>
                 <div style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <BadgePill tone="gold">🏬 Supermarche</BadgePill>
+                    <BadgePill>🅿️ Parking</BadgePill>
+                    <BadgePill>📱 LiDAR</BadgePill>
+                    <BadgePill tone="ok">🎙️ Voice copilot</BadgePill>
+                  </div>
                   <input value={storeForm.slug} onChange={(event) => setStoreForm((current) => ({ ...current, slug: event.target.value }))} placeholder="Slug magasin" style={inputStyle} />
                   <input value={storeForm.name} onChange={(event) => setStoreForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom magasin" style={inputStyle} />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 10 }}>
+                  <input value={storeForm.brandName} onChange={(event) => setStoreForm((current) => ({ ...current, brandName: event.target.value }))} placeholder="Enseigne / groupe" style={inputStyle} />
+                  <input value={storeForm.address} onChange={(event) => setStoreForm((current) => ({ ...current, address: event.target.value }))} placeholder="Adresse complete" style={inputStyle} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 1fr', gap: 10 }}>
                     <input value={storeForm.city} onChange={(event) => setStoreForm((current) => ({ ...current, city: event.target.value }))} placeholder="Ville" style={inputStyle} />
                     <input value={storeForm.country} onChange={(event) => setStoreForm((current) => ({ ...current, country: event.target.value }))} placeholder="Pays" style={inputStyle} />
+                    <input value={storeForm.timezone} onChange={(event) => setStoreForm((current) => ({ ...current, timezone: event.target.value }))} placeholder="Timezone" style={inputStyle} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <select value={storeForm.type} onChange={(event) => setStoreForm((current) => ({ ...current, type: event.target.value }))} style={inputStyle}>
+                      <option value="supermarket">Supermarket</option>
+                      <option value="hypermarket">Hypermarket</option>
+                      <option value="grocery">Grocery</option>
+                      <option value="convenience">Convenience</option>
+                    </select>
+                    <select value={storeForm.cameraPlan} onChange={(event) => setStoreForm((current) => ({ ...current, cameraPlan: event.target.value }))} style={inputStyle}>
+                      <option value="starter">Starter · 4 cameras</option>
+                      <option value="growth">Growth · 12 cameras</option>
+                      <option value="fleet">Fleet · 30+ cameras</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: '0.68rem', color: '#666' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" checked={storeForm.parkingEnabled} onChange={(event) => setStoreForm((current) => ({ ...current, parkingEnabled: event.target.checked }))} /> Parking</label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" checked={storeForm.lidarEnabled} onChange={(event) => setStoreForm((current) => ({ ...current, lidarEnabled: event.target.checked }))} /> iPhone LiDAR</label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" checked={storeForm.voiceAssistantEnabled} onChange={(event) => setStoreForm((current) => ({ ...current, voiceAssistantEnabled: event.target.checked }))} /> Gemini voice ops</label>
                   </div>
                   <button type="button" onClick={submitStore} style={primaryButton}>Creer le magasin</button>
                 </div>
-              </section>
+              </PanelCard>
 
-              <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
+              <PanelCard dark>
                 <SectionTitle>Configurer un bridge edge</SectionTitle>
                 <div style={{ display: 'grid', gap: 10 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <input value={bridgeForm.profileKey} onChange={(event) => setBridgeForm((current) => ({ ...current, profileKey: event.target.value }))} placeholder="profileKey" style={inputStyle} />
-                    <input value={bridgeForm.name} onChange={(event) => setBridgeForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom du bridge" style={inputStyle} />
+                    <input value={bridgeForm.profileKey} onChange={(event) => setBridgeForm((current) => ({ ...current, profileKey: event.target.value }))} placeholder="profileKey" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                    <input value={bridgeForm.name} onChange={(event) => setBridgeForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom du bridge" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
                   </div>
-                  <select value={bridgeForm.sourceKey} onChange={(event) => setBridgeForm((current) => ({ ...current, sourceKey: event.target.value }))} style={inputStyle}>
+                  <select value={bridgeForm.sourceKey} onChange={(event) => setBridgeForm((current) => ({ ...current, sourceKey: event.target.value }))} style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }}>
                     <option value="">Associer une source</option>
                     {dashboard.sources.map((source) => (
                       <option key={source.id} value={source.id}>{source.name}</option>
                     ))}
                   </select>
-                  <input value={bridgeForm.rtspUrl} onChange={(event) => setBridgeForm((current) => ({ ...current, rtspUrl: event.target.value }))} placeholder="rtsp://..." style={inputStyle} />
-                  <input value={bridgeForm.webrtcUrl} onChange={(event) => setBridgeForm((current) => ({ ...current, webrtcUrl: event.target.value }))} placeholder="webrtc://..." style={inputStyle} />
-                  <input value={bridgeForm.hlsUrl} onChange={(event) => setBridgeForm((current) => ({ ...current, hlsUrl: event.target.value }))} placeholder="https://.../master.m3u8" style={inputStyle} />
+                  <input value={bridgeForm.rtspUrl} onChange={(event) => setBridgeForm((current) => ({ ...current, rtspUrl: event.target.value }))} placeholder="rtsp://..." style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={bridgeForm.webrtcUrl} onChange={(event) => setBridgeForm((current) => ({ ...current, webrtcUrl: event.target.value }))} placeholder="webrtc://..." style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <input value={bridgeForm.hlsUrl} onChange={(event) => setBridgeForm((current) => ({ ...current, hlsUrl: event.target.value }))} placeholder="https://.../master.m3u8" style={{ ...inputStyle, background: '#111', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+                  <div style={{ color: 'rgba(255,255,255,.68)', fontSize: '0.68rem', lineHeight: 1.7 }}>
+                    Utilise ce formulaire pour override un bridge auto ou brancher un edge externe deja provisionne.
+                  </div>
                   <button type="button" onClick={submitBridge} style={primaryButton}>Enregistrer le bridge</button>
                 </div>
-              </section>
+              </PanelCard>
             </div>
 
             <MobileCameraPublisher />

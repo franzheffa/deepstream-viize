@@ -3,6 +3,7 @@ import { requireSession } from '../../../lib/auth'
 import { prisma } from '../../../lib/prisma'
 import { ensureStoreSeed } from '../../../lib/seed-data'
 import { hasRole } from '../../../lib/roles'
+import { normalizeStoreSlug } from '../../../lib/retail-onboarding'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,12 +46,19 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => null)
-  const slug = String(body?.slug || '').trim().toLowerCase()
+  const slug = normalizeStoreSlug(String(body?.slug || '').trim(), 'store')
   const name = String(body?.name || '').trim()
   const city = String(body?.city || '').trim() || 'Montreal'
   const country = String(body?.country || '').trim() || 'CA'
   const address = String(body?.address || '').trim() || null
   const type = String(body?.type || '').trim() || 'supermarket'
+  const timezone = String(body?.timezone || '').trim() || 'America/Toronto'
+  const brandName = String(body?.brandName || '').trim() || null
+  const parkingEnabled = body?.parkingEnabled !== false
+  const lidarEnabled = body?.lidarEnabled !== false
+  const voiceAssistantEnabled = body?.voiceAssistantEnabled !== false
+  const onboardingMode = String(body?.onboardingMode || '').trim() || 'plug-and-play'
+  const cameraPlan = String(body?.cameraPlan || '').trim() || 'starter'
 
   if (!slug || !name) {
     return NextResponse.json({ error: 'slug et name requis.' }, { status: 400 })
@@ -64,10 +72,21 @@ export async function POST(request: NextRequest) {
       country,
       address,
       type,
+      timezone,
       metadata: {
-        parking: true,
-        voiceAssistant: true,
-        lidarIntake: true,
+        brandName,
+        parking: parkingEnabled,
+        voiceAssistant: voiceAssistantEnabled,
+        lidarIntake: lidarEnabled,
+        onboardingMode,
+        cameraPlan,
+        onboardingChecklist: [
+          'create-owner',
+          'create-store',
+          'provision-first-camera',
+          'import-catalog',
+          'start-first-scan',
+        ],
       },
     },
   })
@@ -90,9 +109,20 @@ export async function POST(request: NextRequest) {
       action: 'store_created',
       entityType: 'store',
       entityId: store.id,
-      metadata: { slug, name, city, country, type },
+      metadata: { slug, name, city, country, type, timezone, parkingEnabled, lidarEnabled, voiceAssistantEnabled, onboardingMode, cameraPlan },
     },
   })
 
-  return NextResponse.json({ ok: true, store })
+  return NextResponse.json({
+    ok: true,
+    store,
+    onboarding: {
+      mode: onboardingMode,
+      next: [
+        'registrer une camera ou un iPhone',
+        'laisser VIIZE provisionner le bridge',
+        'importer le catalogue produit',
+      ],
+    },
+  })
 }
