@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client'
-import { readDirectDatabaseUrl } from './env'
+import { readRuntimeDatabaseUrl } from './env'
 
-const resolvedDatabaseUrl = readDirectDatabaseUrl()
+const resolvedDatabaseUrl = readRuntimeDatabaseUrl()
 
 if (resolvedDatabaseUrl) {
   process.env.DATABASE_URL = resolvedDatabaseUrl

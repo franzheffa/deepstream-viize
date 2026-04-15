@@ -33,3 +33,13 @@ export function readDirectDatabaseUrl() {
 
   return candidates[0] || ''
 }
+
+export function readRuntimeDatabaseUrl() {
+  const candidates = [
+    readEnv('PRISMA_DATABASE_URL'),
+    readEnv('DATABASE_URL'),
+    readEnv('POSTGRES_URL'),
+  ].filter(Boolean)
+
+  return candidates[0] || ''
+}
