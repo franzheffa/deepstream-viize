@@ -1,4 +1,7 @@
-export const metadata = { title: 'Viize — People Analytics' }
+export const metadata = {
+  title: 'VIIZE — Enterprise Retail Intelligence',
+  description: 'Buttertech DeepStream VIIZE for supermarket, hypermarket, parking, logistics, stock and mobile LiDAR orchestration.',
+}
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">

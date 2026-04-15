@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+export const dynamic = 'force-dynamic'
 const SECRET = process.env.DEEPSTREAM_WEBHOOK_SECRET ?? "";
 const THRESHOLDS: Record<string,number> = {
   bouteille_eau_500ml: 8,
@@ -28,6 +29,9 @@ export async function POST(req: NextRequest) {
   }
 }
 export async function GET() {
-  return NextResponse.json({ ok:true, service:"VIIZE DeepStream Webhook", version:"1.0.0",
-    store: process.env.NEXT_PUBLIC_STORE_ID ?? "epicerie-saint-denis-mtl", uptime: process.uptime() });
+  return NextResponse.json({ ok:true, service:"VIIZE DeepStream Webhook", version:"1.1.0",
+    store: process.env.NEXT_PUBLIC_STORE_ID ?? "epicerie-saint-denis-mtl",
+    posture: "enterprise retail telemetry",
+    privacy: "least-data camera analytics",
+    uptime: process.uptime() });
 }

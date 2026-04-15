@@ -10,5 +10,7 @@ config/peoplenet/*.engine
 *.swp
 .vercel
 dashboard/.next/
+dashboard/node_modules/
 .env
 dashboard/.env.local
+/vercel.json

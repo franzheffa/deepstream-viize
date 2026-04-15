@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 // ── In-memory circular buffer ─────────────────────────────────────────────────
 // Fonctionne en Next.js dev et Vercel (instances chaudes).
 // Production persistante → migrer vers Vercel KV :
