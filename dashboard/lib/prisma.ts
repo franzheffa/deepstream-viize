@@ -1,7 +1,9 @@
+import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
-import { readRuntimeDatabaseUrl } from './env'
+import { Pool } from 'pg'
+import { readDirectDatabaseUrl } from './env'
 
-const resolvedDatabaseUrl = readRuntimeDatabaseUrl()
+const resolvedDatabaseUrl = readDirectDatabaseUrl()
 
 if (resolvedDatabaseUrl) {
   process.env.DATABASE_URL = resolvedDatabaseUrl
@@ -10,6 +12,19 @@ if (resolvedDatabaseUrl) {
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
 
 function createPrismaClient() {
+  if (resolvedDatabaseUrl) {
+    const adapter = new PrismaPg(
+      new Pool({
+        connectionString: resolvedDatabaseUrl,
+      }),
+    )
+
+    return new PrismaClient({
+      adapter,
+      log: ['error'],
+    })
+  }
+
   return new PrismaClient({
     log: ['error'],
   })
