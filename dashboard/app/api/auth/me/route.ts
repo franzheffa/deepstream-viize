@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromRequest } from '../../../../lib/auth'
+import { readRuntimeDatabaseUrl } from '../../../../lib/env'
 import { prisma } from '../../../../lib/prisma'
 
 export const dynamic = 'force-dynamic'
@@ -8,16 +9,24 @@ export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   let bootstrapAllowed = true
   let databaseReady = true
+  let databaseError: string | null = null
+  const runtimeUrl = readRuntimeDatabaseUrl()
+  const databaseUrlKind = runtimeUrl.startsWith('prisma+postgres://')
+    ? 'prisma+postgres'
+    : runtimeUrl.startsWith('postgres://') || runtimeUrl.startsWith('postgresql://')
+      ? 'postgres'
+      : 'missing'
 
   try {
     bootstrapAllowed = (await prisma.user.count()) === 0
   } catch (error) {
     databaseReady = false
+    databaseError = error instanceof Error ? error.message : 'database_error'
     console.error('[auth/me] user.count failed', error)
   }
 
   if (!session) {
-    return NextResponse.json({ authenticated: false, bootstrapAllowed, databaseReady })
+    return NextResponse.json({ authenticated: false, bootstrapAllowed, databaseReady, databaseError, databaseUrlKind })
   }
 
   try {
@@ -64,6 +73,8 @@ export async function GET(request: NextRequest) {
       authenticated: false,
       bootstrapAllowed,
       databaseReady: false,
+      databaseError,
+      databaseUrlKind,
       error: 'database_unavailable',
     })
   }
