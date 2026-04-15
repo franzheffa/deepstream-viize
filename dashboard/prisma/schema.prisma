@@ -1,0 +1,174 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String            @id @default(cuid())
+  email         String            @unique
+  displayName   String?
+  passwordHash  String
+  status        String            @default("active")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  memberships   StoreMembership[]
+  inventoryScans InventoryScan[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+model Store {
+  id             String            @id @default(cuid())
+  slug           String            @unique
+  name           String
+  type           String            @default("supermarket")
+  country        String            @default("CA")
+  city           String            @default("Montreal")
+  address        String?
+  timezone       String            @default("America/Toronto")
+  status         String            @default("active")
+  metadata       Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  memberships    StoreMembership[]
+  cameraSources  CameraSource[]
+  bridgeProfiles BridgeProfile[]
+  products       Product[]
+  inventoryScans InventoryScan[]
+  auditLogs      AuditLog[]
+
+  @@map("stores")
+}
+
+model StoreMembership {
+  id         String   @id @default(cuid())
+  userId     String
+  storeId    String
+  role       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storeId])
+  @@index([storeId, role])
+  @@map("store_memberships")
+}
+
+model CameraSource {
+  id           String   @id @default(cuid())
+  storeId      String
+  sourceKey    String
+  name         String
+  type         String
+  input        String
+  ingestUrl    String?
+  playbackUrl  String?
+  zone         String?
+  purpose      String?
+  status       String   @default("pending")
+  capabilities Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  inventoryScans InventoryScan[]
+  bridgeProfiles BridgeProfile[]
+
+  @@unique([storeId, sourceKey])
+  @@index([storeId, status])
+  @@map("camera_sources")
+}
+
+model BridgeProfile {
+  id             String       @id @default(cuid())
+  storeId        String
+  cameraSourceId String?
+  profileKey     String
+  name           String
+  mode           String
+  rtspUrl        String?
+  webrtcUrl      String?
+  hlsUrl         String?
+  edgeRegion     String?
+  status         String       @default("planned")
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  store          Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  cameraSource   CameraSource? @relation(fields: [cameraSourceId], references: [id], onDelete: SetNull)
+
+  @@unique([storeId, profileKey])
+  @@index([storeId, status])
+  @@map("bridge_profiles")
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  storeId        String
+  sku            String
+  barcode        String?
+  name           String
+  category       String?
+  unit           String?
+  aisle          String?
+  shelf          String?
+  threshold      Int      @default(0)
+  stockOnHand    Int      @default(0)
+  status         String   @default("ok")
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  store          Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  inventoryScans InventoryScan[]
+
+  @@unique([storeId, sku])
+  @@unique([storeId, barcode])
+  @@index([storeId, status])
+  @@map("products")
+}
+
+model InventoryScan {
+  id             String       @id @default(cuid())
+  storeId        String
+  productId      String?
+  cameraSourceId String?
+  userId         String?
+  sourceType     String
+  barcode        String?
+  quantity       Int          @default(0)
+  confidence     Float?
+  zone           String?
+  payload        Json?
+  createdAt      DateTime     @default(now())
+  store          Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product        Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  cameraSource   CameraSource? @relation(fields: [cameraSourceId], references: [id], onDelete: SetNull)
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, createdAt])
+  @@map("inventory_scans")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  storeId    String?
+  userId     String?
+  level      String   @default("info")
+  action     String
+  entityType String
+  entityId   String?
+  ipAddress  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  store      Store?   @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, createdAt])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}

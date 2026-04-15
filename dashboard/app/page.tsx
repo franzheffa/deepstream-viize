@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from 'react'
+import { startTransition, useEffect, useRef, useState } from 'react'
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -21,13 +21,25 @@ const BORDER = '#E8E6DE'
 
 type TabKey = 'overview' | 'cameras' | 'stock' | 'operations' | 'gemini' | 'reports'
 
-type EventRecord = {
-  entry?: number
-  exit?: number
-  occupancy?: number
-  ts: string
-  streamId?: string
-  detections?: number
+type Membership = {
+  role: string
+  storeId: string
+  storeSlug: string
+  storeName: string
+  status: string
+}
+
+type AuthPayload = {
+  authenticated: boolean
+  bootstrapAllowed: boolean
+  user?: {
+    id: string
+    email: string
+    displayName: string | null
+  }
+  currentStoreId?: string
+  currentRole?: string
+  memberships?: Membership[]
 }
 
 type SourceRecord = {
@@ -37,15 +49,103 @@ type SourceRecord = {
   input: string
   playback: string | null
   status: string
-  zone?: string
-  purpose?: string
-  capabilities?: {
-    iphone?: boolean
-    lidarReady?: boolean
-    appleIntelligenceReady?: boolean
-    stockScanning?: boolean
-    parking?: boolean
+  zone?: string | null
+  purpose?: string | null
+}
+
+type BridgeRecord = {
+  id: string
+  profileKey: string
+  name: string
+  mode: string
+  rtspUrl?: string | null
+  webrtcUrl?: string | null
+  hlsUrl?: string | null
+  edgeRegion?: string | null
+  status: string
+}
+
+type ProductRecord = {
+  id: string
+  sku: string
+  barcode?: string | null
+  name: string
+  category?: string | null
+  unit?: string | null
+  aisle?: string | null
+  shelf?: string | null
+  threshold: number
+  stockOnHand: number
+  status: string
+  emoji: string
+}
+
+type ScanRecord = {
+  id: string
+  sourceType: string
+  barcode?: string | null
+  quantity: number
+  confidence?: number | null
+  zone?: string | null
+  createdAt: string
+  productName?: string | null
+  sourceName?: string | null
+  actorName?: string | null
+}
+
+type AuditRecord = {
+  id: string
+  level: string
+  action: string
+  entityType: string
+  entityId?: string | null
+  createdAt: string
+}
+
+type DashboardPayload = {
+  ok: boolean
+  role: string
+  user: {
+    id: string
+    email: string
+    displayName: string | null
   }
+  store: {
+    id: string
+    slug: string
+    name: string
+    city: string
+    country: string
+    address?: string | null
+  }
+  health: {
+    ok: boolean
+    status: string
+    store: string
+    posture: string
+    sourceCount: number
+    persistence: string
+    privacy: string
+  }
+  kpis: {
+    criticalProducts: number
+    lowProducts: number
+    liveSources: number
+    sourceCount: number
+    scans24h: number
+  }
+  sources: SourceRecord[]
+  bridgeProfiles: BridgeRecord[]
+  products: ProductRecord[]
+  scans: ScanRecord[]
+  audits: AuditRecord[]
+}
+
+type EventRecord = {
+  entry?: number
+  exit?: number
+  occupancy?: number
+  ts: string
 }
 
 type GeminiMessage = {
@@ -54,56 +154,22 @@ type GeminiMessage = {
   ts: string
 }
 
-type HealthRecord = {
-  ok: boolean
-  status: string
-  store: string
-  posture: string
-  sourceCount: number
-  persistence: string
-  privacy: string
-}
-
 const REPLIES: Record<string, string> = {
   report:
-    'Rapport retail mondial: frequentation soutenue, deux ruptures a traiter, parking fluide et reserve stable. Priorite: eau, pain et facing promotionnel sur le rayon boisson.',
+    'Rapport magasin: la plateforme consolide flux cameras, stocks critiques, scans terrain, bridge edge et traces d audit. Priorite immediate: traiter les produits critiques, valider les sources pending et fiabiliser le bridge du magasin actif.',
   stock:
-    'Stocks: eau 500 ml critique, pain baguette bas, yaourt sous seuil, produits frais stables. Je recommande reappro reserve, scan iPhone LiDAR des palettes et verification camera du facing.',
+    'Stocks: les produits sous seuil doivent etre rescannes via iPhone LiDAR ou barcode, puis reapprovisionnes depuis reserve. Chaque mouvement est maintenant journalise en base pour audit et tenancy multi-magasin.',
   parking:
-    'Parking et logistique: occupation client 62%, une baie livraison libre, file reception stable. Je peux preparer le flux quai -> reserve -> rayon pour la prochaine livraison.',
+    'Parking et logistique: la camera parking peut couvrir occupation, quais livraison, rotation flotte et attente de reception. Les evenements peuvent ensuite alimenter alertes operationnelles et orchestration magasin.',
   cameras:
-    'Cameras: entree, rayons, caisse et parking peuvent couvrir surveillance, comptage, rupture rayon, heatmap et files d attente. Les flux web doivent rester HLS ou WebRTC, jamais RTSP direct en navigateur.',
+    'Video pipeline: chaque magasin peut declarer ses sources RTSP, publier un profil bridge WebRTC/HLS, et rester compatible navigateur sans playback RTSP direct.',
   marketing:
-    'Marketing temps reel: trafic fort 11h-13h, promo jus et snacking a pousser en tete de rayon, message vocal doux a diffuser sur les heures creuses et upsell sur les produits complementaires.',
+    'Marketing temps reel: combine frequentation, heatmap, ruptures et zones chaudes pour piloter tete de gondole, messages vocaux et campagnes promotionnelles.',
   lidar:
-    'iPhone LiDAR: utile pour scanner reception, volumes, cartons, inventaire reserve et verification mise en rayon. Il complete la vision fixe magasin avec un intake mobile terrain.',
+    'iPhone LiDAR: utile pour reception palette, scan barcode, verification facing et inventaire reserve. Il agit comme un edge mobile qui complete les cameras fixes.',
   default:
-    'Je consolide les flux DeepStream, les stocks et les signaux magasin. Demande-moi un rapport, une action stock, une lecture parking ou un plan marketing.',
+    'Je peux t aider sur les cameras, le bridge RTSP, les scans stock, la multi-boutique, le parking ou la synthese Gemini du magasin.',
 }
-
-const STOCK_ROWS = [
-  { emoji: '💧', sku: 'Eau 500ml', zone: 'B3', count: 3, threshold: 8, status: 'CRITIQUE', confidence: 94 },
-  { emoji: '🥖', sku: 'Pain baguette', zone: 'A2', count: 2, threshold: 5, status: 'BAS', confidence: 89 },
-  { emoji: '🥛', sku: 'Yaourt nature', zone: 'C1', count: 4, threshold: 10, status: 'BAS', confidence: 91 },
-  { emoji: '🍊', sku: 'Jus orange 1L', zone: 'D2', count: 12, threshold: 6, status: 'OK', confidence: 96 },
-  { emoji: '🥔', sku: 'Chips nature', zone: 'E1', count: 18, threshold: 5, status: 'OK', confidence: 92 },
-  { emoji: '🥛', sku: 'Lait entier 1L', zone: 'B1', count: 9, threshold: 8, status: 'OK', confidence: 97 },
-]
-
-const PARKING_ROWS = [
-  { emoji: '🚚', label: 'Baie livraison A', value: 'Libre dans 12 min', tone: '#1D6A45' },
-  { emoji: '🚗', label: 'Occupation parking client', value: '62%', tone: GOLD },
-  { emoji: '🛒', label: 'Retours chariots', value: '8 a redistribuer', tone: '#8B6000' },
-  { emoji: '📦', label: 'Reserve vers rayon', value: '2 missions ouvertes', tone: '#C0392B' },
-]
-
-const MARKETING_ROWS = [
-  { emoji: '📣', title: 'Message audio', text: 'Promouvoir la zone snacking entre 16h et 18h avec message vocal doux et contexte meteo.' },
-  { emoji: '🧃', title: 'Cross-sell', text: 'Associer jus orange, viennoiserie et yaourt aux zones de trafic eleve.' },
-  { emoji: '🔥', title: 'Hot zones', text: 'Le rayon boisson et la caisse restent les meilleurs points de conversion aujourd hui.' },
-]
-
-const HEATMAP = [4, 7, 11, 15, 21, 26, 23, 29, 34, 30, 24, 19, 24, 31, 37, 33, 27, 21, 17, 12, 8, 6, 4, 3]
 
 function askReply(question: string) {
   const value = question.toLowerCase()
@@ -116,7 +182,15 @@ function askReply(question: string) {
   return REPLIES.default
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
+function statusTone(status: string) {
+  const value = status.toLowerCase()
+  if (value === 'critical' || value === 'warn' || value === 'offline') return '#C0392B'
+  if (value === 'low' || value === 'planned' || value === 'pending') return '#8B6000'
+  if (value === 'ready' || value === 'live' || value === 'ok' || value === 'active') return '#1D6A45'
+  return '#7E786F'
+}
+
+function SectionTitle({ children }: { children: ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '1rem' }}>
       <div style={{ width: 3, height: 14, background: GOLD, borderRadius: 1 }} />
@@ -137,76 +211,237 @@ function InfoTile({ label, value, sub, color }: { label: string; value: string |
   )
 }
 
-function statusColor(status: string) {
-  if (status === 'CRITIQUE') return '#C0392B'
-  if (status === 'BAS' || status === 'planned') return '#8B6000'
-  if (status === 'live' || status === 'ready' || status === 'OK') return '#1D6A45'
-  return '#7E786F'
+function formatDate(value: string) {
+  return new Date(value).toLocaleString('fr-CA', {
+    hour: '2-digit',
+    minute: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+  })
+}
+
+function AuthCard({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string
+  subtitle: string
+  children: ReactNode
+}) {
+  return (
+    <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
+      <div style={{ fontSize: '0.62rem', letterSpacing: '.16em', textTransform: 'uppercase', color: GOLD, fontWeight: 800 }}>{title}</div>
+      <p style={{ margin: '0.65rem 0 1rem', fontSize: '0.72rem', color: '#666', lineHeight: 1.7 }}>{subtitle}</p>
+      {children}
+    </section>
+  )
+}
+
+function AuthScreen({
+  bootstrapAllowed,
+  actionLoading,
+  authError,
+  loginForm,
+  bootstrapForm,
+  setLoginForm,
+  setBootstrapForm,
+  onLogin,
+  onBootstrap,
+}: {
+  bootstrapAllowed: boolean
+  actionLoading: boolean
+  authError: string | null
+  loginForm: { email: string; password: string }
+  bootstrapForm: { displayName: string; email: string; password: string }
+  setLoginForm: Dispatch<SetStateAction<{ email: string; password: string }>>
+  setBootstrapForm: Dispatch<SetStateAction<{ displayName: string; email: string; password: string }>>
+  onLogin: () => void
+  onBootstrap: () => void
+}) {
+  return (
+    <main style={{ minHeight: '100vh', background: '#fff', color: BLACK, fontFamily: 'system-ui, sans-serif', display: 'grid', gridTemplateRows: '1fr auto' }}>
+      <div style={{ maxWidth: 1280, width: '100%', margin: '0 auto', padding: '2.2rem 2rem 2rem' }}>
+        <div style={{ background: BLACK, border: `1px solid rgba(201,162,39,.16)`, borderRadius: 2, padding: '2rem', color: '#fff', marginBottom: '1rem' }}>
+          <div style={{ fontSize: '0.6rem', letterSpacing: '.22em', textTransform: 'uppercase', color: GOLD, fontWeight: 800 }}>
+            Buttertech · VIIZE · Retail control plane
+          </div>
+          <h1 style={{ margin: '0.8rem 0 0', fontSize: '3rem', lineHeight: 0.96, letterSpacing: '-0.06em' }}>
+            Intelligence video, stock et operations.
+          </h1>
+          <p style={{ margin: '1rem 0 0', maxWidth: 860, fontSize: '0.84rem', lineHeight: 1.8, color: 'rgba(255,255,255,.72)' }}>
+            Une surface enterprise pour deployer la surveillance, les ruptures, le parking, la reception marchandise,
+            les scans barcode/LiDAR et le bridge RTSP vers WebRTC/HLS par magasin avec multi-tenancy, roles et audit.
+          </p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: bootstrapAllowed ? '1fr 1fr' : '1fr', gap: '1rem' }}>
+          {bootstrapAllowed ? (
+            <AuthCard
+              title="Bootstrap owner"
+              subtitle="Premier demarrage production: creation du compte owner, du premier magasin et du seed supermarket."
+            >
+              <div style={{ display: 'grid', gap: 10 }}>
+                <input value={bootstrapForm.displayName} onChange={(event) => setBootstrapForm((current) => ({ ...current, displayName: event.target.value }))} placeholder="Nom complet" style={inputStyle} />
+                <input value={bootstrapForm.email} onChange={(event) => setBootstrapForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email" style={inputStyle} />
+                <input value={bootstrapForm.password} onChange={(event) => setBootstrapForm((current) => ({ ...current, password: event.target.value }))} placeholder="Mot de passe fort" type="password" style={inputStyle} />
+                <button type="button" onClick={onBootstrap} disabled={actionLoading} style={primaryButton}>
+                  Lancer le bootstrap owner
+                </button>
+              </div>
+            </AuthCard>
+          ) : null}
+
+          <AuthCard
+            title="Connexion enterprise"
+            subtitle="Acces par session signee, role, magasin courant et audit de connexion."
+          >
+            <div style={{ display: 'grid', gap: 10 }}>
+              <input value={loginForm.email} onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email" style={inputStyle} />
+              <input value={loginForm.password} onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))} placeholder="Mot de passe" type="password" style={inputStyle} />
+              <button type="button" onClick={onLogin} disabled={actionLoading} style={primaryButton}>
+                Se connecter
+              </button>
+            </div>
+          </AuthCard>
+        </div>
+
+        {authError ? (
+          <div style={{ marginTop: '1rem', border: '1px solid #F1C4C4', background: '#FFF4F4', color: '#9F2D2D', padding: '0.9rem 1rem', borderRadius: 2 }}>
+            {authError}
+          </div>
+        ) : null}
+      </div>
+
+      <EnterpriseFooter />
+    </main>
+  )
+}
+
+const inputStyle: CSSProperties = {
+  width: '100%',
+  background: '#fff',
+  border: `1px solid ${BORDER}`,
+  borderRadius: 2,
+  padding: '0.85rem 0.9rem',
+  fontSize: '0.74rem',
+  outline: 'none',
+}
+
+const primaryButton: CSSProperties = {
+  background: BLACK,
+  color: GOLD,
+  border: 'none',
+  borderRadius: 2,
+  padding: '0.85rem 1rem',
+  fontSize: '0.62rem',
+  fontWeight: 800,
+  letterSpacing: '.12em',
+  textTransform: 'uppercase',
+  cursor: 'pointer',
+}
+
+const secondaryButton: CSSProperties = {
+  background: '#fff',
+  color: BLACK,
+  border: `1px solid ${BORDER}`,
+  borderRadius: 2,
+  padding: '0.75rem 0.9rem',
+  fontSize: '0.62rem',
+  fontWeight: 800,
+  cursor: 'pointer',
 }
 
 export default function DashboardPage() {
   const [tab, setTab] = useState<TabKey>('overview')
+  const [auth, setAuth] = useState<AuthPayload | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
+  const [dashboard, setDashboard] = useState<DashboardPayload | null>(null)
   const [events, setEvents] = useState<EventRecord[]>([])
-  const [sources, setSources] = useState<SourceRecord[]>([])
-  const [health, setHealth] = useState<HealthRecord | null>(null)
-  const [kpi, setKpi] = useState({ entry: 0, exit: 0, occupancy: 14 })
-  const [tick, setTick] = useState(0)
   const [messages, setMessages] = useState<GeminiMessage[]>([
     {
       role: 'ai',
-      text: 'Bonjour. VIIZE est pret pour le pilotage complet du magasin: surveillance, stock, parking, marketing et scan mobile iPhone LiDAR.',
+      text: 'VIIZE est pret pour les cameras, le bridge edge, le stock reel, la multi-boutique et l audit enterprise.',
       ts: new Date().toISOString(),
     },
   ])
   const [input, setInput] = useState('')
   const [loadingAi, setLoadingAi] = useState(false)
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' })
+  const [bootstrapForm, setBootstrapForm] = useState({ displayName: '', email: '', password: '' })
+  const [scanForm, setScanForm] = useState({ barcode: '', quantity: '0', sourceType: 'iphone-lidar', zone: 'reserve', mode: 'set' })
+  const [storeForm, setStoreForm] = useState({ slug: '', name: '', city: 'Montreal', country: 'CA' })
+  const [bridgeForm, setBridgeForm] = useState({ profileKey: '', name: '', sourceKey: '', rtspUrl: '', webrtcUrl: '', hlsUrl: '', edgeRegion: 'northamerica-northeast1', status: 'planned' })
   const endRef = useRef<HTMLDivElement>(null)
 
+  async function fetchJson<T>(url: string, init?: RequestInit) {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers || {}),
+      },
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error((data as { error?: string }).error || 'Requete impossible.')
+    }
+    return data as T
+  }
+
+  async function refreshAuth() {
+    try {
+      const data = await fetchJson<AuthPayload>('/api/auth/me')
+      setAuth(data)
+      return data
+    } catch {
+      const response = await fetch('/api/auth/me', { cache: 'no-store' })
+      const data = await response.json().catch(() => ({ authenticated: false, bootstrapAllowed: false }))
+      setAuth(data as AuthPayload)
+      return data as AuthPayload
+    }
+  }
+
+  async function refreshDashboard() {
+    const [dashboardData, eventsData] = await Promise.all([
+      fetchJson<DashboardPayload>('/api/dashboard'),
+      fetch('/api/events', { cache: 'no-store' }).then((response) => response.json()).catch(() => ({ events: [] })),
+    ])
+
+    setDashboard(dashboardData)
+    setEvents(Array.isArray(eventsData.events) ? eventsData.events.slice(0, 24).reverse() : [])
+  }
+
   useEffect(() => {
-    const poll = async () => {
-      try {
-        const [eventsRes, sourcesRes, healthRes] = await Promise.all([
-          fetch('/api/events', { cache: 'no-store' }),
-          fetch('/api/sources', { cache: 'no-store' }),
-          fetch('/api/health', { cache: 'no-store' }),
-        ])
-
-        const eventsData = await eventsRes.json()
-        const sourceData = await sourcesRes.json()
-        const healthData = await healthRes.json()
-
-        const nextEvents: EventRecord[] = Array.isArray(eventsData.events) ? eventsData.events.slice(0, 32).reverse() : []
-        setEvents(nextEvents)
-        setSources(Array.isArray(sourceData.sources) ? sourceData.sources : [])
-        setHealth(healthData)
-
-        if (nextEvents.length > 0) {
-          const latest = nextEvents[nextEvents.length - 1]
-          setKpi({
-            entry: latest.entry ?? 0,
-            exit: latest.exit ?? 0,
-            occupancy: latest.occupancy ?? 14,
-          })
-        }
-
-        setTick((value) => value + 1)
-      } catch {
-        setTick((value) => value + 1)
+    startTransition(async () => {
+      const me = await refreshAuth()
+      if (me.authenticated) {
+        await refreshDashboard()
       }
+      setAuthLoading(false)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!auth?.authenticated) {
+      return
     }
 
-    poll()
-    const id = setInterval(poll, 2500)
-    return () => clearInterval(id)
-  }, [])
+    const id = window.setInterval(() => {
+      startTransition(() => {
+        refreshDashboard().catch(() => undefined)
+      })
+    }, 6000)
+
+    return () => window.clearInterval(id)
+  }, [auth?.authenticated, auth?.currentStoreId])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loadingAi])
-
-  const criticalCount = STOCK_ROWS.filter((item) => item.status === 'CRITIQUE').length
-  const lowCount = STOCK_ROWS.filter((item) => item.status === 'BAS').length
-  const liveSources = useMemo(() => sources.filter((source) => ['live', 'ready'].includes(source.status)).length, [sources])
 
   function sendAi(question: string) {
     const value = question.trim()
@@ -219,7 +454,135 @@ export default function DashboardPage() {
     window.setTimeout(() => {
       setMessages((current) => [...current, { role: 'ai', text: askReply(value), ts: new Date().toISOString() }])
       setLoadingAi(false)
-    }, 850)
+    }, 700)
+  }
+
+  async function handleLogin() {
+    setActionLoading(true)
+    setAuthError(null)
+    try {
+      await fetchJson('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(loginForm),
+      })
+      const me = await refreshAuth()
+      if (me.authenticated) {
+        await refreshDashboard()
+      }
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Connexion impossible.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleBootstrap() {
+    setActionLoading(true)
+    setAuthError(null)
+    try {
+      await fetchJson('/api/auth/bootstrap', {
+        method: 'POST',
+        body: JSON.stringify(bootstrapForm),
+      })
+      const me = await refreshAuth()
+      if (me.authenticated) {
+        await refreshDashboard()
+      }
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Bootstrap impossible.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleLogout() {
+    await fetchJson('/api/auth/logout', { method: 'POST', body: JSON.stringify({}) })
+    setAuth(null)
+    setDashboard(null)
+    setEvents([])
+    await refreshAuth()
+  }
+
+  async function handleStoreSwitch(storeId: string) {
+    try {
+      await fetchJson('/api/auth/switch-store', {
+        method: 'POST',
+        body: JSON.stringify({ storeId }),
+      })
+      await refreshAuth()
+      await refreshDashboard()
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Impossible de changer de magasin.')
+    }
+  }
+
+  async function submitScan() {
+    try {
+      await fetchJson('/api/scans', {
+        method: 'POST',
+        body: JSON.stringify({
+          barcode: scanForm.barcode,
+          quantity: Number(scanForm.quantity),
+          sourceType: scanForm.sourceType,
+          zone: scanForm.zone,
+          mode: scanForm.mode,
+          payload: { lidar: scanForm.sourceType === 'iphone-lidar' },
+        }),
+      })
+      await refreshDashboard()
+      setScanForm((current) => ({ ...current, barcode: '', quantity: '0' }))
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Scan impossible.')
+    }
+  }
+
+  async function submitStore() {
+    try {
+      await fetchJson('/api/stores', {
+        method: 'POST',
+        body: JSON.stringify(storeForm),
+      })
+      const me = await refreshAuth()
+      if (me.memberships?.length) {
+        await handleStoreSwitch(me.memberships[me.memberships.length - 1].storeId)
+      }
+      setStoreForm({ slug: '', name: '', city: 'Montreal', country: 'CA' })
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Creation magasin impossible.')
+    }
+  }
+
+  async function submitBridge() {
+    try {
+      await fetchJson('/api/bridge', {
+        method: 'POST',
+        body: JSON.stringify(bridgeForm),
+      })
+      await refreshDashboard()
+      setBridgeForm({ profileKey: '', name: '', sourceKey: '', rtspUrl: '', webrtcUrl: '', hlsUrl: '', edgeRegion: 'northamerica-northeast1', status: 'planned' })
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Bridge impossible.')
+    }
+  }
+
+  if (authLoading) {
+    return <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', fontFamily: 'system-ui, sans-serif' }}>Chargement VIIZE...</main>
+  }
+
+  if (!auth?.authenticated || !dashboard) {
+    return (
+      <AuthScreen
+        bootstrapAllowed={Boolean(auth?.bootstrapAllowed)}
+        actionLoading={actionLoading}
+        authError={authError}
+        loginForm={loginForm}
+        bootstrapForm={bootstrapForm}
+        setLoginForm={setLoginForm}
+        setBootstrapForm={setBootstrapForm}
+        onLogin={handleLogin}
+        onBootstrap={handleBootstrap}
+      />
+    )
   }
 
   const navItems: { key: TabKey; label: string }[] = [
@@ -231,6 +594,9 @@ export default function DashboardPage() {
     { key: 'reports', label: 'Rapports' },
   ]
 
+  const currentMembership = auth.memberships?.find((item) => item.storeId === auth.currentStoreId) || null
+  const occupancySeries = events.length ? events : [{ ts: new Date().toISOString(), occupancy: 0, entry: 0, exit: 0 }]
+
   return (
     <main style={{ minHeight: '100vh', background: '#fff', color: BLACK, fontFamily: 'system-ui, sans-serif' }}>
       <header style={{ background: BLACK, borderBottom: `3px solid ${GOLD}`, padding: '0.9rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
@@ -241,24 +607,25 @@ export default function DashboardPage() {
               Buttertech · DeepStream · VIIZE
             </div>
             <div style={{ fontSize: '1.2rem', fontWeight: 900, color: '#fff', letterSpacing: '-0.03em' }}>
-              Enterprise supermarket intelligence platform
+              Supermarket intelligence platform
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.6rem', color: '#666', letterSpacing: '.05em' }}>
-            {health?.store || 'Saint-Denis flagship'} · Montreal
-          </span>
-          <span style={{ fontSize: '0.6rem', color: '#666' }}>
-            {health?.privacy || 'camera analytics + regional controls'}
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-            <div style={{ width: 7, height: 7, borderRadius: '50%', background: liveSources > 0 ? '#4CAF50' : GOLD }} />
-            <span style={{ fontSize: '0.6rem', fontWeight: 800, letterSpacing: '.1em', color: liveSources > 0 ? '#4CAF50' : GOLD }}>
-              {liveSources > 0 ? `${liveSources}/${Math.max(sources.length, 1)} READY` : 'AWAITING SIGNAL'}
-            </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
+          <select value={auth.currentStoreId} onChange={(event) => handleStoreSwitch(event.target.value)} style={{ ...secondaryButton, minWidth: 220 }}>
+            {auth.memberships?.map((membership) => (
+              <option key={membership.storeId} value={membership.storeId}>
+                {membership.storeName} · {membership.role}
+              </option>
+            ))}
+          </select>
+          <div style={{ fontSize: '0.62rem', color: '#B8B8B8' }}>
+            {dashboard.store.city} · {dashboard.store.country} · {currentMembership?.role || dashboard.role}
           </div>
+          <button type="button" onClick={handleLogout} style={{ ...secondaryButton, color: '#fff', borderColor: '#333', background: '#111' }}>
+            Quitter
+          </button>
         </div>
       </header>
 
@@ -288,59 +655,34 @@ export default function DashboardPage() {
       </nav>
 
       <div style={{ padding: '1.5rem 2rem 2rem', maxWidth: 1460, margin: '0 auto' }}>
+        {authError ? (
+          <div style={{ marginBottom: '1rem', border: '1px solid #F1C4C4', background: '#FFF4F4', color: '#9F2D2D', padding: '0.85rem 1rem', borderRadius: 2 }}>
+            {authError}
+          </div>
+        ) : null}
+
         {tab === 'overview' && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-              <InfoTile label="Personnes en magasin" value={kpi.occupancy || 14} sub="+3 vs hier" color={GOLD} />
-              <InfoTile label="Ruptures critiques" value={criticalCount} sub={`${lowCount} alertes basses`} color="#C0392B" />
-              <InfoTile label="Sources connectees" value={`${liveSources}/${Math.max(sources.length, 1)}`} sub={health?.persistence || 'runtime'} color="#1D6A45" />
-              <InfoTile label="Latence IA" value="118ms" sub={health?.posture || 'fdx-grade retail telemetry'} color="#1D6A45" />
+              <InfoTile label="Magasin" value={dashboard.store.name} sub={dashboard.store.address || dashboard.store.slug} color={GOLD} />
+              <InfoTile label="Sources connectees" value={`${dashboard.kpis.liveSources}/${dashboard.kpis.sourceCount}`} sub={dashboard.health.persistence} color="#1D6A45" />
+              <InfoTile label="Stocks critiques" value={dashboard.kpis.criticalProducts} sub={`${dashboard.kpis.lowProducts} produits bas`} color="#C0392B" />
+              <InfoTile label="Scans recents" value={dashboard.kpis.scans24h} sub={dashboard.health.posture} color="#1D6A45" />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.85fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '1rem', marginBottom: '1rem' }}>
               <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
-                <SectionTitle>Stocks critiques et rayons a traiter</SectionTitle>
-                {STOCK_ROWS.map((item) => {
-                  const color = statusColor(item.status)
-                  return (
-                    <div key={item.sku} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #F2EFE6' }}>
-                      <span style={{ fontSize: '0.8rem', minWidth: 24 }}>{item.emoji}</span>
-                      <span style={{ fontSize: '0.72rem', color: BLACK, flex: 1 }}>{item.sku} · {item.zone}</span>
-                      <div style={{ flex: 2, height: 3, background: '#F0EDE5' }}>
-                        <div style={{ height: 3, width: `${Math.round((item.count / item.threshold) * 100)}%`, background: color }} />
-                      </div>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color, minWidth: 24, textAlign: 'right' }}>{item.count}</span>
-                      <span style={{ fontSize: '0.55rem', padding: '2px 7px', background: `${color}12`, color, fontWeight: 800, letterSpacing: '.05em' }}>
-                        {item.status}
-                      </span>
-                    </div>
-                  )
-                })}
-              </section>
-
-              <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
-                <SectionTitle>Operations terrain et parking</SectionTitle>
-                <div style={{ display: 'grid', gap: 10 }}>
-                  {PARKING_ROWS.map((item) => (
-                    <div key={item.label} style={{ background: PANEL, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${item.tone}`, borderRadius: 2, padding: '0.85rem' }}>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 900 }}>{item.emoji} {item.label}</div>
-                      <div style={{ marginTop: 6, fontSize: '0.68rem', color: '#666' }}>{item.value}</div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-              <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
-                <SectionTitle>Marketing temps reel</SectionTitle>
-                <div style={{ display: 'grid', gap: 10 }}>
-                  {MARKETING_ROWS.map((item) => (
-                    <div key={item.title} style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 2, padding: '0.9rem' }}>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 900 }}>{item.emoji} {item.title}</div>
-                      <div style={{ marginTop: 6, fontSize: '0.68rem', color: '#666', lineHeight: 1.7 }}>{item.text}</div>
-                    </div>
-                  ))}
+                <SectionTitle>Frequentation et pression magasin</SectionTitle>
+                <div style={{ height: 260 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={occupancySeries}>
+                      <CartesianGrid stroke="#F0EDE5" />
+                      <XAxis dataKey="ts" tickFormatter={(value) => new Date(value).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })} fontSize={10} />
+                      <YAxis fontSize={10} />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="occupancy" stroke={GOLD} strokeWidth={2.2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
               </section>
 
@@ -349,15 +691,15 @@ export default function DashboardPage() {
                 <div style={{ background: BLACK, borderLeft: `3px solid ${GOLD}`, borderRadius: 2, padding: '1rem' }}>
                   <div style={{ fontSize: '0.55rem', color: GOLD, letterSpacing: '.12em', fontWeight: 800, marginBottom: 6 }}>GEMINI SUMMARY</div>
                   <p style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,.74)', lineHeight: 1.7, margin: 0 }}>
-                    Le magasin peut maintenant etre pilote de l entree au parking: surveillance, frequentation, file caisse,
-                    ruptures, reserve, reception, scanning mobile et marketing temps reel dans une seule surface.
+                    {dashboard.store.name} dispose maintenant d un socle exploitable: sources persistees, profils bridge, scans stock
+                    reels, audit et roles par magasin avec onboarding iPhone LiDAR.
                   </p>
                 </div>
                 <div style={{ marginTop: '0.9rem', display: 'grid', gap: 8 }}>
                   {[
-                    '🎥 Camera onboarding simplifie pour toute flotte magasin',
-                    '📱 iPhone LiDAR pour reception et inventaire',
-                    '🔐 Posture retail enterprise inspiree des exigences de Smith-Heffa Paygate',
+                    `🔐 ${dashboard.health.privacy}`,
+                    `🏬 ${dashboard.store.city} · ${dashboard.store.country}`,
+                    `📡 ${dashboard.bridgeProfiles.length} profils bridge actives ou planifies`,
                   ].map((item) => (
                     <div key={item} style={{ fontSize: '0.68rem', color: '#666' }}>{item}</div>
                   ))}
@@ -366,17 +708,18 @@ export default function DashboardPage() {
             </div>
 
             <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
-              <SectionTitle>Frequentation et pression magasin 06h-22h</SectionTitle>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(24,1fr)', gap: 3 }}>
-                {HEATMAP.map((value, index) => {
-                  const power = value / 37
-                  const background = power > 0.55 ? `rgba(201,162,39,${0.18 + power * 0.75})` : `rgba(10,10,10,${0.04 + power * 0.2})`
-                  return (
-                    <div key={index} style={{ height: 28, background, borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.45rem', fontWeight: 800, color: power > 0.5 ? '#6C5100' : '#777' }}>
-                      {value}
+              <SectionTitle>Produits a traiter</SectionTitle>
+              <div style={{ display: 'grid', gap: 10 }}>
+                {dashboard.products.slice(0, 6).map((product) => (
+                  <div key={product.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 1fr auto auto', gap: '0.75rem', alignItems: 'center', borderBottom: '1px solid #F2EFE6', padding: '0.7rem 0' }}>
+                    <div style={{ fontSize: '0.76rem', fontWeight: 700 }}>{product.emoji} {product.name}</div>
+                    <div style={{ height: 4, background: '#F0EDE5' }}>
+                      <div style={{ height: 4, width: `${Math.min(100, Math.max(8, Math.round((product.stockOnHand / Math.max(product.threshold, 1)) * 100)))}%`, background: statusTone(product.status) }} />
                     </div>
-                  )
-                })}
+                    <div style={{ fontSize: '0.65rem', color: statusTone(product.status), fontWeight: 800 }}>{product.stockOnHand} / {product.threshold}</div>
+                    <button type="button" onClick={() => sendAi(`Stock ${product.name}`)} style={secondaryButton}>Analyser</button>
+                  </div>
+                ))}
               </div>
             </section>
           </>
@@ -385,28 +728,28 @@ export default function DashboardPage() {
         {tab === 'cameras' && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '1rem', marginBottom: '1rem' }}>
-              {sources.filter((item) => item.type.includes('camera') || item.id.startsWith('cam-')).map((source) => (
-                <div key={source.id} style={{ background: BLACK, border: `1px solid ${statusColor(source.status)}`, borderRadius: 2, overflow: 'hidden' }}>
+              {dashboard.sources.map((source) => (
+                <div key={source.id} style={{ background: BLACK, border: `1px solid ${statusTone(source.status)}`, borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{ height: 180, background: '#050505', display: 'grid', placeItems: 'center', color: '#333', fontSize: '0.62rem', letterSpacing: '.2em', textTransform: 'uppercase' }}>
-                    {source.status === 'live' || source.status === 'ready' ? 'Vision feed ready' : 'No signal'}
+                    {source.status === 'live' || source.status === 'ready' ? 'Vision feed ready' : 'Awaiting signal'}
                   </div>
                   <div style={{ padding: '0.8rem 0.95rem', borderTop: '1px solid #141414', display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
                     <div>
                       <div style={{ color: '#fff', fontSize: '0.74rem', fontWeight: 800 }}>{source.name}</div>
-                      <div style={{ color: '#555', fontSize: '0.56rem', marginTop: 4 }}>{source.id} · {source.zone || 'zone non definie'}</div>
+                      <div style={{ color: '#666', fontSize: '0.56rem', marginTop: 4 }}>{source.id} · {source.zone || 'zone non definie'}</div>
                     </div>
-                    <div style={{ color: statusColor(source.status), fontSize: '0.55rem', fontWeight: 800, letterSpacing: '.1em' }}>{source.status.toUpperCase()}</div>
+                    <div style={{ color: statusTone(source.status), fontSize: '0.55rem', fontWeight: 800, letterSpacing: '.1em' }}>{source.status.toUpperCase()}</div>
                   </div>
                 </div>
               ))}
             </div>
 
             <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
-              <SectionTitle>Detections actives · video intelligence</SectionTitle>
+              <SectionTitle>Bridge RTSP → WebRTC / HLS</SectionTitle>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.7rem' }}>
                 <thead>
                   <tr>
-                    {['Camera', 'Objet', 'Confiance', 'Zone', 'Action', 'Temps'].map((header) => (
+                    {['Profil', 'Mode', 'RTSP', 'WebRTC', 'HLS', 'Region', 'Statut'].map((header) => (
                       <th key={header} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: `1px solid ${BORDER}`, fontSize: '0.55rem', letterSpacing: '.12em', textTransform: 'uppercase', color: '#888', fontWeight: 800 }}>
                         {header}
                       </th>
@@ -414,18 +757,15 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    ['cam-01', '👤 Personne', '97%', 'Entree', 'Flux client', '04:07:31'],
-                    ['cam-02', '📦 Rayon vide', '94%', 'B3 etagere 2', 'Alerte rupture', '04:07:22'],
-                    ['cam-03', '🧾 File caisse', '91%', 'Caisse', 'Pilotage personnel', '04:07:18'],
-                    ['parking-01', '🚚 Livraison', '88%', 'Parking', 'Reception reserve', '04:06:59'],
-                  ].map((row) => (
-                    <tr key={row.join('-')} style={{ borderBottom: '1px solid #F2EFE6' }}>
-                      {row.map((cell, index) => (
-                        <td key={`${cell}-${index}`} style={{ padding: '9px 8px', color: index === 2 ? '#1D6A45' : BLACK, fontWeight: index === 2 ? 800 : 500 }}>
-                          {cell}
-                        </td>
-                      ))}
+                  {dashboard.bridgeProfiles.map((bridge) => (
+                    <tr key={bridge.id} style={{ borderBottom: '1px solid #F2EFE6' }}>
+                      <td style={{ padding: '9px 8px' }}>{bridge.name}</td>
+                      <td>{bridge.mode}</td>
+                      <td>{bridge.rtspUrl || 'n/a'}</td>
+                      <td>{bridge.webrtcUrl || 'n/a'}</td>
+                      <td>{bridge.hlsUrl || 'n/a'}</td>
+                      <td>{bridge.edgeRegion || 'n/a'}</td>
+                      <td style={{ color: statusTone(bridge.status), fontWeight: 800 }}>{bridge.status}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -435,95 +775,105 @@ export default function DashboardPage() {
         )}
 
         {tab === 'stock' && (
-          <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
-            <SectionTitle>Stocks, scanning iPhone et recommandations rayon</SectionTitle>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
-              <thead>
-                <tr>
-                  {['Produit', 'Zone', 'Stock', 'Seuil', 'IA conf.', 'Statut', 'Action terrain'].map((header) => (
-                    <th key={header} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: `1px solid ${BORDER}`, fontSize: '0.55rem', letterSpacing: '.12em', textTransform: 'uppercase', color: '#888', fontWeight: 800 }}>
-                      {header}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {STOCK_ROWS.map((item) => {
-                  const color = statusColor(item.status)
-                  return (
-                    <tr key={item.sku} style={{ borderBottom: '1px solid #F2EFE6' }}>
-                      <td style={{ padding: '9px 8px' }}>{item.emoji} {item.sku}</td>
-                      <td>{item.zone}</td>
-                      <td style={{ color, fontWeight: 800 }}>{item.count}</td>
-                      <td>{item.threshold}</td>
-                      <td>{item.confidence}%</td>
+          <>
+            <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem', marginBottom: '1rem' }}>
+              <SectionTitle>Stocks reels et base produit</SectionTitle>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
+                <thead>
+                  <tr>
+                    {['Produit', 'Barcode', 'Zone', 'Stock', 'Seuil', 'Statut', 'Action'].map((header) => (
+                      <th key={header} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: `1px solid ${BORDER}`, fontSize: '0.55rem', letterSpacing: '.12em', textTransform: 'uppercase', color: '#888', fontWeight: 800 }}>
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboard.products.map((product) => (
+                    <tr key={product.id} style={{ borderBottom: '1px solid #F2EFE6' }}>
+                      <td style={{ padding: '9px 8px' }}>{product.emoji} {product.name}</td>
+                      <td>{product.barcode || 'n/a'}</td>
+                      <td>{product.aisle || 'n/a'}</td>
+                      <td style={{ color: statusTone(product.status), fontWeight: 800 }}>{product.stockOnHand}</td>
+                      <td>{product.threshold}</td>
+                      <td><span style={{ color: statusTone(product.status), fontWeight: 800 }}>{product.status.toUpperCase()}</span></td>
                       <td>
-                        <span style={{ fontSize: '0.55rem', padding: '2px 8px', background: `${color}12`, color, fontWeight: 800, letterSpacing: '.05em' }}>
-                          {item.status}
-                        </span>
-                      </td>
-                      <td>
-                        {item.status !== 'OK' ? (
-                          <button
-                            type="button"
-                            onClick={() => sendAi(`Stock ${item.sku} ${item.zone}`)}
-                            style={{ background: 'none', border: `1px solid ${GOLD}`, color: '#7A5E10', fontSize: '0.55rem', padding: '0.3rem 0.6rem', cursor: 'pointer', fontWeight: 800 }}
-                          >
-                            Scan + reappro
-                          </button>
-                        ) : (
-                          'stable'
-                        )}
+                        <button type="button" onClick={() => setScanForm((current) => ({ ...current, barcode: product.barcode || current.barcode, quantity: String(product.stockOnHand) }))} style={secondaryButton}>
+                          Preparer scan
+                        </button>
                       </td>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </section>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+
+            <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
+              <SectionTitle>Ingestion produit · barcode · LiDAR</SectionTitle>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr)) auto', gap: '0.75rem', alignItems: 'end' }}>
+                <input value={scanForm.barcode} onChange={(event) => setScanForm((current) => ({ ...current, barcode: event.target.value }))} placeholder="Barcode" style={inputStyle} />
+                <input value={scanForm.quantity} onChange={(event) => setScanForm((current) => ({ ...current, quantity: event.target.value }))} placeholder="Quantite" style={inputStyle} />
+                <select value={scanForm.sourceType} onChange={(event) => setScanForm((current) => ({ ...current, sourceType: event.target.value }))} style={inputStyle}>
+                  <option value="iphone-lidar">iPhone LiDAR</option>
+                  <option value="barcode-scanner">Barcode scanner</option>
+                  <option value="camera-vision">Camera vision</option>
+                  <option value="manual">Manual</option>
+                </select>
+                <input value={scanForm.zone} onChange={(event) => setScanForm((current) => ({ ...current, zone: event.target.value }))} placeholder="Zone" style={inputStyle} />
+                <select value={scanForm.mode} onChange={(event) => setScanForm((current) => ({ ...current, mode: event.target.value }))} style={inputStyle}>
+                  <option value="set">Set stock</option>
+                  <option value="delta">Delta stock</option>
+                </select>
+                <button type="button" onClick={submitScan} style={primaryButton}>Enregistrer</button>
+              </div>
+
+              <div style={{ marginTop: '1rem', display: 'grid', gap: 10 }}>
+                {dashboard.scans.map((scan) => (
+                  <div key={scan.id} style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 2, padding: '0.85rem 0.95rem' }}>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 800 }}>{scan.productName || scan.barcode || 'Scan sans produit'} · {scan.quantity}</div>
+                    <div style={{ marginTop: 4, fontSize: '0.64rem', color: '#666' }}>
+                      {scan.sourceType} · {scan.zone || 'zone n/a'} · {scan.sourceName || 'source manuelle'} · {formatDate(scan.createdAt)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </>
         )}
 
         {tab === 'operations' && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.05fr 0.95fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
-                <SectionTitle>Fleet onboarding · sources declarees</SectionTitle>
+                <SectionTitle>Ajouter un magasin</SectionTitle>
                 <div style={{ display: 'grid', gap: 10 }}>
-                  {sources.map((source) => (
-                    <div key={source.id} style={{ background: PANEL, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${statusColor(source.status)}`, borderRadius: 2, padding: '0.9rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-                        <div>
-                          <div style={{ fontSize: '0.8rem', fontWeight: 900 }}>{source.name}</div>
-                          <div style={{ marginTop: 4, fontSize: '0.64rem', color: '#666' }}>
-                            {source.type} · {source.input} · {source.playback || 'n/a'}
-                          </div>
-                        </div>
-                        <span style={{ fontSize: '0.55rem', color: statusColor(source.status), fontWeight: 800, letterSpacing: '.1em' }}>
-                          {source.status.toUpperCase()}
-                        </span>
-                      </div>
-                      <div style={{ marginTop: 8, fontSize: '0.66rem', color: '#666' }}>
-                        Zone: {source.zone || 'non definie'} · Usage: {source.purpose || 'telemetry'}
-                      </div>
-                    </div>
-                  ))}
+                  <input value={storeForm.slug} onChange={(event) => setStoreForm((current) => ({ ...current, slug: event.target.value }))} placeholder="Slug magasin" style={inputStyle} />
+                  <input value={storeForm.name} onChange={(event) => setStoreForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom magasin" style={inputStyle} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 10 }}>
+                    <input value={storeForm.city} onChange={(event) => setStoreForm((current) => ({ ...current, city: event.target.value }))} placeholder="Ville" style={inputStyle} />
+                    <input value={storeForm.country} onChange={(event) => setStoreForm((current) => ({ ...current, country: event.target.value }))} placeholder="Pays" style={inputStyle} />
+                  </div>
+                  <button type="button" onClick={submitStore} style={primaryButton}>Creer le magasin</button>
                 </div>
               </section>
 
               <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
-                <SectionTitle>Workforce numerique magasin</SectionTitle>
+                <SectionTitle>Configurer un bridge edge</SectionTitle>
                 <div style={{ display: 'grid', gap: 10 }}>
-                  {[
-                    '🛡️ Surveillance et anomalies rayon, caisse, entree et reserve',
-                    '📦 Stock temps reel, facing, rupture et reception livraison',
-                    '🅿️ Parking, quais, occupation et rotation flotte',
-                    '📣 Marketing, trafic, zones chaudes et recommandations promo',
-                    '🧠 Gemini pour synthese voix, texte et commandes terrain',
-                  ].map((item) => (
-                    <div key={item} style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 2, padding: '0.9rem', fontSize: '0.68rem', color: '#555' }}>
-                      {item}
-                    </div>
-                  ))}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <input value={bridgeForm.profileKey} onChange={(event) => setBridgeForm((current) => ({ ...current, profileKey: event.target.value }))} placeholder="profileKey" style={inputStyle} />
+                    <input value={bridgeForm.name} onChange={(event) => setBridgeForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom du bridge" style={inputStyle} />
+                  </div>
+                  <select value={bridgeForm.sourceKey} onChange={(event) => setBridgeForm((current) => ({ ...current, sourceKey: event.target.value }))} style={inputStyle}>
+                    <option value="">Associer une source</option>
+                    {dashboard.sources.map((source) => (
+                      <option key={source.id} value={source.id}>{source.name}</option>
+                    ))}
+                  </select>
+                  <input value={bridgeForm.rtspUrl} onChange={(event) => setBridgeForm((current) => ({ ...current, rtspUrl: event.target.value }))} placeholder="rtsp://..." style={inputStyle} />
+                  <input value={bridgeForm.webrtcUrl} onChange={(event) => setBridgeForm((current) => ({ ...current, webrtcUrl: event.target.value }))} placeholder="webrtc://..." style={inputStyle} />
+                  <input value={bridgeForm.hlsUrl} onChange={(event) => setBridgeForm((current) => ({ ...current, hlsUrl: event.target.value }))} placeholder="https://.../master.m3u8" style={inputStyle} />
+                  <button type="button" onClick={submitBridge} style={primaryButton}>Enregistrer le bridge</button>
                 </div>
               </section>
             </div>
@@ -541,7 +891,7 @@ export default function DashboardPage() {
               <div>
                 <div style={{ fontSize: '0.76rem', fontWeight: 800, letterSpacing: '.12em', color: '#fff' }}>Gemini retail orchestrator</div>
                 <div style={{ fontSize: '0.56rem', color: 'rgba(201,162,39,.72)' }}>
-                  vision · voix · parking · stock · magasin · reserve
+                  vision · voix · stock · parking · audit · multi-store
                 </div>
               </div>
               <div style={{ marginLeft: 'auto', color: '#4CAF50', fontSize: '0.56rem', fontWeight: 800, letterSpacing: '.1em' }}>ACTIVE</div>
@@ -549,12 +899,7 @@ export default function DashboardPage() {
 
             <div style={{ display: 'flex', gap: 6, marginBottom: '0.9rem', flexWrap: 'wrap' }}>
               {['Rapport magasin', 'Stock critique', 'Parking logistique', 'Plan marketing', 'iPhone LiDAR'].map((label) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => sendAi(label)}
-                  style={{ fontSize: '0.55rem', padding: '0.3rem 0.65rem', border: '1px solid rgba(201,162,39,.2)', color: 'rgba(201,162,39,.72)', background: 'none', cursor: 'pointer', fontWeight: 800 }}
-                >
+                <button key={label} type="button" onClick={() => sendAi(label)} style={{ ...secondaryButton, background: 'transparent', color: GOLD, borderColor: 'rgba(201,162,39,.2)' }}>
                   {label}
                 </button>
               ))}
@@ -579,99 +924,47 @@ export default function DashboardPage() {
                   </p>
                 </div>
               ))}
-
-              {loadingAi ? (
-                <div style={{ background: 'rgba(247,245,239,.05)', borderLeft: `2px solid ${GOLD}`, borderRadius: 2, padding: '0.75rem 0.9rem', alignSelf: 'flex-start' }}>
-                  <p style={{ margin: 0, fontSize: '0.72rem', color: GOLD, fontStyle: 'italic' }}>Gemini analyse...</p>
-                </div>
-              ) : null}
+              {loadingAi ? <div style={{ color: GOLD, fontSize: '0.72rem' }}>Gemini analyse...</div> : null}
               <div ref={endRef} />
             </div>
 
             <div style={{ marginTop: '1rem', display: 'flex', gap: 8 }}>
-              <input
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') sendAi(input)
-                }}
-                placeholder="Demande un rapport, une action stock, une lecture parking ou une strategie promo..."
-                style={{ flex: 1, background: 'rgba(247,245,239,.05)', border: '1px solid rgba(201,162,39,.16)', borderRadius: 2, padding: '0.8rem 0.9rem', color: '#fff', fontSize: '0.72rem', outline: 'none' }}
-              />
-              <button
-                type="button"
-                onClick={() => sendAi(input)}
-                style={{ background: GOLD, color: BLACK, border: 'none', borderRadius: 2, padding: '0.8rem 1rem', fontSize: '0.62rem', fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', cursor: 'pointer' }}
-              >
-                Envoyer
-              </button>
+              <input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') sendAi(input) }} placeholder="Demande un rapport, un statut bridge, un risque stock ou un plan terrain..." style={{ ...inputStyle, background: 'rgba(247,245,239,.05)', color: '#fff', borderColor: 'rgba(201,162,39,.16)' }} />
+              <button type="button" onClick={() => sendAi(input)} style={{ ...primaryButton, background: GOLD, color: BLACK }}>Envoyer</button>
             </div>
           </section>
         )}
 
         {tab === 'reports' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            {[
-              {
-                emoji: '📊',
-                title: 'Rapport exploitation magasin',
-                desc: 'Frequentation, file caisse, ruptures, reserve, parking et performance rayon.',
-              },
-              {
-                emoji: '🚚',
-                title: 'Rapport logistique et parking',
-                desc: 'Quais, rotations, livraison, occupation parking et passage reserve.',
-              },
-              {
-                emoji: '📦',
-                title: 'Rapport stock et inventaire',
-                desc: 'Ruptures, seuils, reappro et scans iPhone LiDAR reception + reserve.',
-              },
-              {
-                emoji: '📣',
-                title: 'Rapport marketing temps reel',
-                desc: 'Zones chaudes, campagnes vocales, trafic et recommandations promotionnelles.',
-              },
-            ].map((item) => (
-              <button
-                key={item.title}
-                type="button"
-                onClick={() => sendAi(item.title)}
-                style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem', textAlign: 'left', cursor: 'pointer' }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', marginBottom: '0.8rem' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 900 }}>{item.emoji} {item.title}</span>
-                  <span style={{ fontSize: '0.55rem', padding: '2px 8px', background: 'rgba(201,162,39,.12)', color: '#7A5E10', border: '1px solid rgba(201,162,39,.24)', fontWeight: 800 }}>
-                    Gemini
-                  </span>
-                </div>
-                <p style={{ margin: 0, fontSize: '0.68rem', color: '#666', lineHeight: 1.7 }}>{item.desc}</p>
-              </button>
-            ))}
+            <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
+              <SectionTitle>Audit enterprise</SectionTitle>
+              <div style={{ display: 'grid', gap: 10 }}>
+                {dashboard.audits.map((audit) => (
+                  <div key={audit.id} style={{ background: PANEL, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${statusTone(audit.level)}`, borderRadius: 2, padding: '0.85rem 0.95rem' }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 800 }}>{audit.action}</div>
+                    <div style={{ marginTop: 4, fontSize: '0.62rem', color: '#666' }}>{audit.entityType} · {audit.entityId || 'n/a'} · {formatDate(audit.createdAt)}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem' }}>
+              <SectionTitle>Tenancy et magasins</SectionTitle>
+              <div style={{ display: 'grid', gap: 10 }}>
+                {auth.memberships?.map((membership) => (
+                  <div key={membership.storeId} style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 2, padding: '0.85rem 0.95rem' }}>
+                    <div style={{ fontSize: '0.76rem', fontWeight: 800 }}>{membership.storeName}</div>
+                    <div style={{ marginTop: 4, fontSize: '0.64rem', color: '#666' }}>{membership.storeSlug} · {membership.role} · {membership.status}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
         )}
-
-        <section style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 2, padding: '1.25rem', marginTop: '1rem' }}>
-          <SectionTitle>Timeline detections et occupation</SectionTitle>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={events} margin={{ top: 0, right: 10, left: -24, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F0EDE5" />
-              <XAxis dataKey="ts" tick={{ fontSize: 9, fill: '#AAA' }} tickFormatter={(value) => String(value).slice(11, 19)} />
-              <YAxis tick={{ fontSize: 9, fill: '#AAA' }} />
-              <Tooltip
-                contentStyle={{ background: BLACK, border: `1px solid ${GOLD}`, borderRadius: 2, fontSize: 11, color: '#fff' }}
-                labelStyle={{ color: GOLD, fontSize: 10 }}
-              />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="entry" name="Entry" stroke={GOLD} dot={false} strokeWidth={2} />
-              <Line type="monotone" dataKey="exit" name="Exit" stroke={BLACK} dot={false} strokeWidth={2} />
-              <Line type="monotone" dataKey="occupancy" name="Occupancy" stroke="#999" dot={false} strokeWidth={1.5} strokeDasharray="4 2" />
-            </LineChart>
-          </ResponsiveContainer>
-        </section>
-
-        <EnterpriseFooter />
       </div>
+
+      <EnterpriseFooter />
     </main>
   )
 }
