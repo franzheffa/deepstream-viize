@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromRequest } from '../../../../lib/auth'
 import { readRuntimeDatabaseUrl } from '../../../../lib/env'
 import { prisma } from '../../../../lib/prisma'
+import { maskEmail } from '../../../../lib/security'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +11,7 @@ export async function GET(request: NextRequest) {
   let bootstrapAllowed = true
   let databaseReady = true
   let databaseError: string | null = null
+  let ownerEmailHint: string | null = null
   const runtimeUrl = readRuntimeDatabaseUrl()
   const databaseUrlKind = runtimeUrl.startsWith('prisma+postgres://')
     ? 'prisma+postgres'
@@ -19,6 +21,18 @@ export async function GET(request: NextRequest) {
 
   try {
     bootstrapAllowed = (await prisma.user.count()) === 0
+    if (!bootstrapAllowed) {
+      const firstUser = await prisma.user.findFirst({
+        orderBy: {
+          createdAt: 'asc',
+        },
+        select: {
+          email: true,
+        },
+      })
+
+      ownerEmailHint = firstUser?.email ? maskEmail(firstUser.email) : null
+    }
   } catch (error) {
     databaseReady = false
     databaseError = error instanceof Error ? error.message : 'database_error'
@@ -26,7 +40,15 @@ export async function GET(request: NextRequest) {
   }
 
   if (!session) {
-    return NextResponse.json({ authenticated: false, bootstrapAllowed, databaseReady, databaseError, databaseUrlKind })
+    return NextResponse.json({
+      authenticated: false,
+      bootstrapAllowed,
+      databaseReady,
+      databaseError,
+      databaseUrlKind,
+      ownerEmailHint,
+      ownerRecoveryAvailable: !bootstrapAllowed,
+    })
   }
 
   try {
@@ -52,6 +74,8 @@ export async function GET(request: NextRequest) {
       authenticated: true,
       bootstrapAllowed,
       databaseReady,
+      ownerEmailHint,
+      ownerRecoveryAvailable: !bootstrapAllowed,
       user: {
         id: user.id,
         email: user.email,

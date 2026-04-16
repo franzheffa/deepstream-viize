@@ -31,6 +31,19 @@ export function verifyPassword(password: string, storedHash: string) {
   return crypto.timingSafeEqual(actual, expected)
 }
 
+export function maskEmail(email: string) {
+  const [localPart, domainPart] = email.split('@')
+  if (!localPart || !domainPart) {
+    return 'compte-owner'
+  }
+
+  const visibleLocal = localPart.length <= 3
+    ? `${localPart[0] || '*'}***`
+    : `${localPart.slice(0, 2)}***${localPart.slice(-1)}`
+
+  return `${visibleLocal}@${domainPart}`
+}
+
 export type SessionPayload = {
   userId: string
   storeId: string

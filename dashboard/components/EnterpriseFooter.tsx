@@ -2,6 +2,14 @@ const GOLD = '#C9A227'
 const BLACK = '#0A0A0A'
 
 export default function EnterpriseFooter() {
+  const ecosystemLinks = [
+    ['DeepStream VIIZE', 'https://deepstream-viize.vercel.app'],
+    ['Smith-Heffa Paygate', 'https://smith-heffa-paygate.vercel.app'],
+    ['Buttertech Academy', 'https://buttertech-academy.vercel.app'],
+    ['AI Studio Smith-Heffa', 'https://aistudio-smith-heffa.vercel.app'],
+    ['Agent Smith-Heffa Coding', 'https://agent-smith-heffa-coding.vercel.app'],
+  ]
+
   return (
     <footer
       style={{
@@ -56,16 +64,28 @@ export default function EnterpriseFooter() {
 
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: '0.85rem',
-          flexWrap: 'wrap',
-          alignItems: 'center',
+          display: 'grid',
+          gridTemplateColumns: '1.1fr 0.9fr 1.1fr',
+          gap: '1rem',
+          alignItems: 'start',
           borderTop: '1px solid rgba(255,255,255,.08)',
-          paddingTop: '0.85rem',
+          paddingTop: '1rem',
         }}
       >
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'grid', gap: '0.7rem' }}>
+          <div style={{ fontSize: '0.58rem', color: GOLD, fontWeight: 800, letterSpacing: '.14em', textTransform: 'uppercase' }}>
+            Ecosysteme Buttertech
+          </div>
+          <div style={{ display: 'grid', gap: '0.4rem' }}>
+            {ecosystemLinks.map(([label, href]) => (
+              <a key={label} href={href} target="_blank" rel="noreferrer" style={{ color: 'rgba(255,255,255,.78)', textDecoration: 'none', fontSize: '0.66rem' }}>
+                {label}
+              </a>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
           {[
             { src: '/partners/nvidia-inception-badge-black.svg', alt: 'NVIDIA Inception Program', width: 122 },
             { src: '/partners/gemini-enterprise.png', alt: 'Gemini Enterprise', width: 180 },
@@ -76,7 +96,8 @@ export default function EnterpriseFooter() {
             </div>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+
+        <div style={{ display: 'grid', justifyItems: 'end', gap: '0.55rem' }}>
           {[
             ['GPU', 'NVIDIA DeepStream + TensorRT'],
             ['VOICE', 'Gemini copilote operations'],
@@ -88,10 +109,10 @@ export default function EnterpriseFooter() {
               <span style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,.58)' }}>{value}</span>
             </div>
           ))}
+          <span style={{ fontSize: '0.56rem', color: 'rgba(255,255,255,.45)', letterSpacing: '.08em', marginTop: '0.4rem' }}>
+            2026 Buttertech Inc. · VIIZE enterprise retail stack
+          </span>
         </div>
-        <span style={{ fontSize: '0.56rem', color: 'rgba(255,255,255,.45)', letterSpacing: '.08em' }}>
-          2026 Buttertech Inc. · VIIZE enterprise retail stack
-        </span>
       </div>
     </footer>
   )

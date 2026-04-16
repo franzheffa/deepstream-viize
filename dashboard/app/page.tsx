@@ -33,6 +33,8 @@ type AuthPayload = {
   authenticated: boolean
   bootstrapAllowed: boolean
   databaseReady?: boolean
+  ownerEmailHint?: string | null
+  ownerRecoveryAvailable?: boolean
   user?: {
     id: string
     email: string
@@ -330,24 +332,34 @@ function PasswordField({
 
 function AuthScreen({
   bootstrapAllowed,
+  ownerEmailHint,
+  ownerRecoveryAvailable,
   actionLoading,
   authError,
   loginForm,
   bootstrapForm,
+  recoveryForm,
   setLoginForm,
   setBootstrapForm,
+  setRecoveryForm,
   onLogin,
   onBootstrap,
+  onRecover,
 }: {
   bootstrapAllowed: boolean
+  ownerEmailHint?: string | null
+  ownerRecoveryAvailable?: boolean
   actionLoading: boolean
   authError: string | null
   loginForm: { email: string; password: string }
   bootstrapForm: { displayName: string; email: string; password: string }
+  recoveryForm: { email: string; password: string; recoveryCode: string }
   setLoginForm: Dispatch<SetStateAction<{ email: string; password: string }>>
   setBootstrapForm: Dispatch<SetStateAction<{ displayName: string; email: string; password: string }>>
+  setRecoveryForm: Dispatch<SetStateAction<{ email: string; password: string; recoveryCode: string }>>
   onLogin: () => void
   onBootstrap: () => void
+  onRecover: () => void
 }) {
   return (
     <main style={{ minHeight: '100vh', background: '#fff', color: BLACK, fontFamily: 'system-ui, sans-serif', display: 'grid', gridTemplateRows: '1fr auto' }}>
@@ -364,33 +376,60 @@ function AuthScreen({
             les scans barcode/LiDAR et le bridge RTSP vers WebRTC/HLS par magasin avec multi-tenancy, roles et audit.
           </p>
 
-          <div style={{ marginTop: '1.2rem', display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.9rem' }}>
+          <div style={{ marginTop: '1.2rem', display: 'grid', gridTemplateColumns: '1fr 1.3fr 1fr', gap: '1.2rem', alignItems: 'center' }}>
             {[
               { src: '/partners/nvidia-inception-badge-black.svg', label: 'NVIDIA Inception Program' },
               { src: '/partners/gemini-enterprise.png', label: 'Gemini Enterprise' },
               { src: '/partners/google-maps-platform.png', label: 'Google Maps Platform' },
-            ].map((item) => (
-              <div key={item.label} style={{ background: 'rgba(255,255,255,.04)', border: '1px solid rgba(201,162,39,.12)', borderRadius: 2, padding: '0.9rem', display: 'grid', placeItems: 'center', minHeight: 96 }}>
-                <img src={item.src} alt={item.label} style={{ maxWidth: '100%', maxHeight: 42, objectFit: 'contain', filter: item.label === 'NVIDIA Inception Program' ? 'none' : 'none' }} />
+            ].map((item, index) => (
+              <div
+                key={item.label}
+                style={{
+                  background: 'rgba(255,255,255,.04)',
+                  border: '1px solid rgba(201,162,39,.12)',
+                  borderRadius: 2,
+                  padding: '1rem 1.15rem',
+                  display: 'grid',
+                  placeItems: index === 0 ? 'start center' : index === 1 ? 'center' : 'end center',
+                  minHeight: 104,
+                }}
+              >
+                <img src={item.src} alt={item.label} style={{ maxWidth: '100%', maxHeight: 44, objectFit: 'contain' }} />
               </div>
             ))}
           </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-          <AuthCard
-            title="Creation owner"
-            subtitle="Premier demarrage ou reprise du site: cree le compte owner. Si un compte existe deja, le bootstrap sera bloque proprement."
-          >
-            <div style={{ display: 'grid', gap: 10 }}>
-              <input value={bootstrapForm.displayName} onChange={(event) => setBootstrapForm((current) => ({ ...current, displayName: event.target.value }))} placeholder="Nom complet" style={inputStyle} />
-              <input value={bootstrapForm.email} onChange={(event) => setBootstrapForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email" style={inputStyle} />
-              <PasswordField value={bootstrapForm.password} onChange={(value) => setBootstrapForm((current) => ({ ...current, password: value }))} placeholder="Mot de passe fort" />
-              <button type="button" onClick={onBootstrap} disabled={actionLoading} style={primaryButton}>
-                Creer le compte owner
-              </button>
-            </div>
-          </AuthCard>
+          {bootstrapAllowed ? (
+            <AuthCard
+              title="Creation owner"
+              subtitle="Premier demarrage ou reprise du site: cree le compte owner. Si un compte existe deja, le bootstrap sera bloque proprement."
+            >
+              <div style={{ display: 'grid', gap: 10 }}>
+                <input value={bootstrapForm.displayName} onChange={(event) => setBootstrapForm((current) => ({ ...current, displayName: event.target.value }))} placeholder="Nom complet" style={inputStyle} />
+                <input value={bootstrapForm.email} onChange={(event) => setBootstrapForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email" style={inputStyle} />
+                <PasswordField value={bootstrapForm.password} onChange={(value) => setBootstrapForm((current) => ({ ...current, password: value }))} placeholder="Mot de passe fort" />
+                <button type="button" onClick={onBootstrap} disabled={actionLoading} style={primaryButton}>
+                  Creer le compte owner
+                </button>
+              </div>
+            </AuthCard>
+          ) : (
+            <AuthCard
+              title="Reprise acces owner"
+              subtitle={`Le bootstrap est deja verrouille.${ownerEmailHint ? ` Compte detecte: ${ownerEmailHint}.` : ''} Reprends l acces avec un nouveau mot de passe et le code de reprise d exploitation.`}
+            >
+              <div style={{ display: 'grid', gap: 10 }}>
+                <input value={recoveryForm.email} onChange={(event) => setRecoveryForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email owner" style={inputStyle} />
+                <PasswordField value={recoveryForm.password} onChange={(value) => setRecoveryForm((current) => ({ ...current, password: value }))} placeholder="Nouveau mot de passe" />
+                <PasswordField value={recoveryForm.recoveryCode} onChange={(value) => setRecoveryForm((current) => ({ ...current, recoveryCode: value }))} placeholder="Code de reprise" />
+                <button type="button" onClick={onRecover} disabled={actionLoading || !ownerRecoveryAvailable} style={primaryButton}>
+                  Reprendre l acces owner
+                </button>
+              </div>
+            </AuthCard>
+          )}
 
           <AuthCard
             title="Connexion enterprise"
@@ -477,6 +516,7 @@ export default function DashboardPage() {
   const [loadingAi, setLoadingAi] = useState(false)
   const [loginForm, setLoginForm] = useState({ email: '', password: '' })
   const [bootstrapForm, setBootstrapForm] = useState({ displayName: '', email: '', password: '' })
+  const [recoveryForm, setRecoveryForm] = useState({ email: '', password: '', recoveryCode: '' })
   const [scanForm, setScanForm] = useState({ barcode: '', quantity: '0', sourceType: 'iphone-lidar', zone: 'reserve', mode: 'set' })
   const [storeForm, setStoreForm] = useState({
     slug: '',
@@ -645,6 +685,25 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleRecoverOwner() {
+    setActionLoading(true)
+    setAuthError(null)
+    try {
+      await fetchJson('/api/auth/recover-owner', {
+        method: 'POST',
+        body: JSON.stringify(recoveryForm),
+      })
+      const me = await refreshAuth()
+      if (me.authenticated) {
+        await refreshDashboard()
+      }
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Reprise owner impossible.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   async function handleLogout() {
     await fetchJson('/api/auth/logout', { method: 'POST', body: JSON.stringify({}) })
     setAuth(null)
@@ -804,14 +863,19 @@ export default function DashboardPage() {
     return (
       <AuthScreen
         bootstrapAllowed={Boolean(auth?.bootstrapAllowed)}
+        ownerEmailHint={auth?.ownerEmailHint}
+        ownerRecoveryAvailable={auth?.ownerRecoveryAvailable}
         actionLoading={actionLoading}
         authError={authError}
         loginForm={loginForm}
         bootstrapForm={bootstrapForm}
+        recoveryForm={recoveryForm}
         setLoginForm={setLoginForm}
         setBootstrapForm={setBootstrapForm}
+        setRecoveryForm={setRecoveryForm}
         onLogin={handleLogin}
         onBootstrap={handleBootstrap}
+        onRecover={handleRecoverOwner}
       />
     )
   }
